@@ -49,3 +49,6 @@ el proyecto de localización argentina, pero solo en formas, no en código.
 </p>
 **Blanco Martin & Asociados EIRL** - http://blancomartin.cl
 
+Contributions:
+
+Thanks to: (see contributions at CONTRIBUTING.md file).

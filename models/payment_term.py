@@ -10,5 +10,3 @@ class paymentTerm(models.Model):
         ('1', '1: Contado'),
         ('2', '2: Credito'),
         ('3', '3: Otro')), 'DTE Sii Code', )
-
-

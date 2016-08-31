@@ -30,4 +30,3 @@ class Binary(http.Controller):
             ]
             return request.make_response(
                     filecontent, headers=headers, cookies=None)
-

@@ -4,21 +4,16 @@
 # directory
 ##############################################################################
 from openerp import fields, models, api, _
-from openerp.exceptions import Warning
 from openerp.exceptions import UserError
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 from lxml import etree
 from lxml.etree import Element, SubElement
 from lxml import objectify
 from lxml.etree import XMLSyntaxError
-from openerp import SUPERUSER_ID
 
-import xml.dom.minidom
 import pytz
 
-
-import socket
 import collections
 
 try:
@@ -26,35 +21,18 @@ try:
 except:
     from StringIO import StringIO
 
-# ejemplo de suds
-import traceback as tb
-import suds.metrics as metrics
-
 try:
     from suds.client import Client
 except:
     pass
-# from suds.transport.https import WindowsHttpAuthenticated
-# from suds.cache import ObjectCache
 
-# ejemplo de suds
-
-# intento con urllib3
 try:
     import urllib3
 except:
     pass
 
-# from urllib3 import HTTPConnectionPool
-#urllib3.disable_warnings()
 pool = urllib3.PoolManager()
-#ca_certs = "/etc/ssl/certs/ca-certificates.crt"
-#pool = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ca_certs=ca_certs)
 import textwrap
-
-# from inspect import currentframe, getframeinfo
-# estas 2 lineas son para imprimir el numero de linea del script
-# (solo para debug)
 
 _logger = logging.getLogger(__name__)
 
@@ -105,6 +83,8 @@ except ImportError:
 
 # timbre patrón. Permite parsear y formar el
 # ordered-dict patrón corespondiente al documento
+'''
+Esta definicion de timbre para reemplazar
 timbre  = """<TED version="1.0"><DD><RE>99999999-9</RE><TD>11</TD><F>1</F>\
 <FE>2000-01-01</FE><RR>99999999-9</RR><RSR>\
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</RSR><MNT>10000</MNT><IT1>IIIIIII\
@@ -117,6 +97,7 @@ afeqWjiRVMvV4+s4Q==</FRMA></CAF><TSTED>2014-04-24T12:02:20</TSTED></DD>\
 <FRMT algoritmo="SHA1withRSA">jiuOQHXXcuwdpj8c510EZrCCw+pfTVGTT7obWm/\
 fHlAa7j08Xff95Yb2zg31sJt6lMjSKdOK+PQp25clZuECig==</FRMT></TED>"""
 result = xmltodict.parse(timbre)
+'''
 
 server_url = {'SIIHOMO':'https://maullin.sii.cl/DTEWS/','SII':'https://palena.sii.cl/DTEWS/'}
 
@@ -228,7 +209,7 @@ class invoice(models.Model):
                 return True
             except XMLSyntaxError as e:
                 #_logger.info(_("The Document XML file has error: %s") % e.args)
-                raise Warning(_('XML Malformed Error %s') % e.args)
+                raise UserError(_('XML Malformed Error %s') % e.args)
 
     '''
     Funcion usada en autenticacion en SII
@@ -508,7 +489,7 @@ version="1.0">
         token = self.get_token(seed_firmado,company_id)
         #_logger.info(_("Token is: {}").format(token))
     #    except:
-    #        raise Warning(connection_status[response.e])
+    #        raise UserError(connection_status[response.e])
     #        return {'sii_result': 'NoEnviado'}
 
         url = 'https://palena.sii.cl'
@@ -557,7 +538,7 @@ version="1.0">
         return {
             'type' : 'ir.actions.act_url',
             'url': '/web/binary/download_document?model=account.invoice\
-&field=sii_xml_request&id=%s&filename=%s' % (self.id,filename),
+&field=sii_xml_request1&id=%s&filename=%s' % (self.id,filename),
             'target': 'self',
         }
 
@@ -589,7 +570,7 @@ version="1.0">
             if folio in range(int(folio_inicial), (int(folio_final)+1)):
                 return post
         if not caffiles:
-            raise Warning(_('''There is no CAF file available or in use \
+            raise UserError(_('''There is no CAF file available or in use \
 for this Document. Please enable one.'''))
 
         if folio > folio_final:
@@ -599,7 +580,7 @@ www.sii.cl'''.format(folio, folio_inicial, folio_final)
             #_logger.info(msg)
             # defino el status como "spent"
             caffile.status = 'spent'
-            raise Warning(_(msg))
+            raise UserError(_(msg))
         return False
 
     '''
@@ -722,9 +703,10 @@ exponent. AND DIGEST""")
     sii_message = fields.Text(
         string='SII Message',
         copy=False)
-    sii_xml_request = fields.Text(
-        string='SII XML Request',
+    sii_xml_request1 = fields.Text(
+        string='SII XML Request 1',
         copy=False)
+
     sii_xml_response = fields.Text(
         string='SII XML Response',
         copy=False)
@@ -773,6 +755,9 @@ exponent. AND DIGEST""")
     def get_barcode(self, inv,  dte_service, no_product=False):
         ted = False
         folio = self.get_folio(inv)
+        result = collections.OrderedDict()
+        result['TED'] = collections.OrderedDict()
+        result['TED']['DD'] = collections.OrderedDict()
         result['TED']['DD']['RE'] = inv.format_vat(inv.company_id.vat)
         result['TED']['DD']['TD'] = inv.sii_document_class_id.sii_code
         result['TED']['DD']['F']  = folio
@@ -804,19 +789,12 @@ exponent. AND DIGEST""")
             ' algoritmo="SHA1withRSA">').replace(
             '<key name="#text">','').replace(
             '</key>','').replace('<CAF>','<CAF version="1.0">')+'</DD>'
-        ###### con esta funcion fuerzo la conversion a iso-8859-1
         ddxml = inv.convert_encoding(ddxml, 'utf-8')
-        # ahora agarro la clave privada y ya tengo los dos elementos
-        # que necesito para firmar
         keypriv = (resultcaf['AUTORIZACION']['RSASK']).encode(
             'latin-1').replace('\t','')
         keypub = (resultcaf['AUTORIZACION']['RSAPUBK']).encode(
             'latin-1').replace('\t','')
-        #####
-        ## antes de firmar, formatear
         root = etree.XML( ddxml )
-        ##
-        # formateo sin remover indents
         ddxml = etree.tostring(root)
         timestamp = self.time_stamp()
         ddxml = ddxml.replace('2014-04-24T12:02:20', timestamp)
@@ -824,8 +802,7 @@ exponent. AND DIGEST""")
         ted = (
             '''<TED version="1.0">{}<FRMT algoritmo="SHA1withRSA">{}\
 </FRMT></TED>''').format(ddxml, frmt)
-        #_logger.info(ted)
-        root = etree.XML(ted)
+        # root = etree.XML(ted)
         # inv.sii_barcode = (etree.tostring(root, pretty__logger.info=True))
         inv.sii_barcode = ted
         image = False
@@ -851,7 +828,7 @@ exponent. AND DIGEST""")
             try:
                 signature_d = self.get_digital_signature(inv.company_id)
             except:
-                raise Warning(_('''There is no Signer Person with an \
+                raise UserError(_('''There is no Signer Person with an \
             authorized signature for you in the system. Please make sure that \
             'user_signature_key' module has been installed and enable a digital \
             signature, for you or make the signer to authorize you to use his \
@@ -1076,7 +1053,7 @@ exponent. AND DIGEST""")
                 for inv_id, documento in classes.iteritems():
                     doc = self.env['account.invoice'].browse(inv_id)
                     dtes.update({str(doc.sii_batch_number): documento})
-                    doc.sii_xml_request = documento
+                    doc.sii_xml_request1 = documento
                     NroDte += 1
                     file_name += 'F' + str(int(doc.sii_document_number)) + 'T' + str(id_class_doc)
                 SubTotDTE += '<SubTotDTE>\n<TpoDTE>' + str(id_class_doc) + '</TpoDTE>\n<NroDTE>'+str(NroDte)+'</NroDTE>\n</SubTotDTE>\n'
@@ -1098,7 +1075,7 @@ exponent. AND DIGEST""")
         for inv in self:
             inv.write({'sii_xml_response':result['sii_xml_response'], 'sii_send_ident':result['sii_send_ident'], 'sii_result': result['sii_result']})
             last = inv
-        last.write({'sii_xml_request':envio_dte})
+        last.write({'sii_xml_request1':envio_dte})
 
 
     def _get_send_status(self, track_id, signature_d,token):
@@ -1160,7 +1137,7 @@ exponent. AND DIGEST""")
                 signature_d['cert'])
             token = self.get_token(seed_firmado,self.company_id)
         except:
-            raise Warning(connection_status[response.e])
+            raise UserError(connection_status[response.e])
         xml_response = xmltodict.parse(self.sii_xml_response)
         if self.sii_result == 'Enviado':
             status = self._get_send_status(self.sii_send_ident, signature_d, token)

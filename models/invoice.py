@@ -81,25 +81,7 @@ try:
 except ImportError:
     _logger.info('Cannot import signxml')
 
-# timbre patrón. Permite parsear y formar el
-# ordered-dict patrón corespondiente al documento
-'''
-Esta definicion de timbre para reemplazar
-timbre  = """<TED version="1.0"><DD><RE>99999999-9</RE><TD>11</TD><F>1</F>\
-<FE>2000-01-01</FE><RR>99999999-9</RR><RSR>\
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</RSR><MNT>10000</MNT><IT1>IIIIIII\
-</IT1><CAF version="1.0"><DA><RE>99999999-9</RE><RS>YYYYYYYYYYYYYYY</RS>\
-<TD>10</TD><RNG><D>1</D><H>1000</H></RNG><FA>2000-01-01</FA><RSAPK><M>\
-DJKFFDJKJKDJFKDJFKDJFKDJKDnbUNTAi2IaDdtAndm2p5udoqFiw==</M><E>Aw==</E></RSAPK>\
-<IDK>300</IDK></DA><FRMA algoritmo="SHA1withRSA">\
-J1u5/1VbPF6ASXkKoMOF0Bb9EYGVzQ1AMawDNOy0xSuAMpkyQe3yoGFthdKVK4JaypQ/F8\
-afeqWjiRVMvV4+s4Q==</FRMA></CAF><TSTED>2014-04-24T12:02:20</TSTED></DD>\
-<FRMT algoritmo="SHA1withRSA">jiuOQHXXcuwdpj8c510EZrCCw+pfTVGTT7obWm/\
-fHlAa7j08Xff95Yb2zg31sJt6lMjSKdOK+PQp25clZuECig==</FRMT></TED>"""
-result = xmltodict.parse(timbre)
-'''
-
-server_url = {'SIIHOMO':'https://maullin.sii.cl/DTEWS/','SII':'https://palena.sii.cl/DTEWS/'}
+server_url = {'SIIHOMO':'https://maullin.sii.cl','SII':'https://palena.sii.cl'}
 
 BC = '''-----BEGIN CERTIFICATE-----\n'''
 EC = '''\n-----END CERTIFICATE-----\n'''
@@ -223,8 +205,8 @@ class invoice(models.Model):
         #esto omite la validacion
         import ssl
         ssl._create_default_https_context = ssl._create_unverified_context
-        url = server_url[company_id.dte_service_provider] + 'CrSeed.jws?WSDL'
-        ns = 'urn:'+server_url[company_id.dte_service_provider] + 'CrSeed.jws'
+        url = server_url[company_id.dte_service_provider] + '/DTEWS/CrSeed.jws?WSDL'
+        ns = 'urn:'+server_url[company_id.dte_service_provider] + '/DTEWS/CrSeed.jws'
         _server = SOAPProxy(url, ns)
         root = etree.fromstring(_server.getSeed())
         semilla = root[0][0].text
@@ -326,8 +308,8 @@ version="1.0">
      @version: 2016-06-01
     '''
     def get_token(self, seed_file,company_id):
-        url = server_url[company_id.dte_service_provider] + 'GetTokenFromSeed.jws?WSDL'
-        ns = 'urn:'+ server_url[company_id.dte_service_provider] +'GetTokenFromSeed.jws'
+        url = server_url[company_id.dte_service_provider] + '/DTEWS/GetTokenFromSeed.jws?WSDL'
+        ns = 'urn:'+ server_url[company_id.dte_service_provider] +'/DTEWS/GetTokenFromSeed.jws'
         _server = SOAPProxy(url, ns)
         tree = etree.fromstring(seed_file)
         ss = etree.tostring(tree, pretty_print=True, encoding='iso-8859-1')
@@ -478,7 +460,6 @@ version="1.0">
     def send_xml_file(self, envio_dte=None, file_name="envio",company_id=False):
         if not company_id.dte_service_provider:
             raise UserError(_("Not Service provider selected!"))
-        #try:
         signature_d = self.get_digital_signature_pem(
             company_id)
         seed = self.get_seed(company_id)
@@ -486,15 +467,9 @@ version="1.0">
         seed_firmado = self.sign_seed(
             template_string, signature_d['priv_key'],
             signature_d['cert'])
-        token = self.get_token(seed_firmado,company_id)
-        #_logger.info(_("Token is: {}").format(token))
-    #    except:
-    #        raise UserError(connection_status[response.e])
-    #        return {'sii_result': 'NoEnviado'}
+        token = self.get_token(seed_firmado, company_id)
 
-        url = 'https://palena.sii.cl'
-        if company_id.dte_service_provider == 'SIIHOMO':
-            url = 'https://maullin.sii.cl'
+        url = server_url[company_id.dte_service_provider]
         post = '/cgi_dte/UPL/DTEUpload'
         headers = {
             'Accept': 'image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, application/vnd.ms-powerpoint, application/ms-excel, application/msword, */*',
@@ -1079,8 +1054,8 @@ exponent. AND DIGEST""")
 
 
     def _get_send_status(self, track_id, signature_d,token):
-        url = server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws?WSDL'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws'
+        url = server_url[self.company_id.dte_service_provider] + '/DTEWS/QueryEstUp.jws?WSDL'
+        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + '/DTEWS/QueryEstUp.jws'
         _server = SOAPProxy(url, ns)
         rut = self.format_vat(self.company_id.vat)
         respuesta = _server.getEstUp(rut[:8], str(rut[-1]),track_id,token)
@@ -1102,8 +1077,8 @@ exponent. AND DIGEST""")
         return status
 
     def _get_dte_status(self, signature_d, token):
-        url = server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws?WSDL'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws'
+        url = server_url[self.company_id.dte_service_provider] + '/DTEWS/QueryEstDte.jws?WSDL'
+        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + '/DTEWS/QueryEstDte.jws'
         _server = SOAPProxy(url, ns)
         receptor = self.format_vat(self.partner_id.vat)
         date_invoice = datetime.strptime(self.date_invoice, "%Y-%m-%d").strftime("%d-%m-%Y")

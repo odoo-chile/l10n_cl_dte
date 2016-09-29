@@ -740,6 +740,75 @@ stamp to be legally valid.''')
             _logger.info('Se ha generado factura en PDF con el id {}'.format(
                 attachment_id))
 
+    @api.v8
+    def _pr_prices(self, line):
+        '''
+        Función en desarrollo, para calcular los valores de impuestos
+        Por ahora esta muteada, para revisar mejor esta parte.
+        @author: Daniel Blanco daniel[at]blancomartin.cl
+        con porciones tomadas del fork del proyecto de
+        Daniel Santibáñez dansanti[at]gmail.com
+        @version: 2016-09-10
+        :param line:
+        :return:
+        '''
+        res = {}
+        tax_obj = self.env['account.tax']
+        cur_obj = self.env['res.currency']
+        _round = (lambda x: cur_obj.round(
+            line.invoice_id.currency_id, x)) if line.invoice_id else (
+            lambda x: x)
+        quantity = line.quantity
+        discount = line.discount
+        printed_price_unit = line.price_unit
+        printed_price_net = line.price_unit * \
+                            (1 - (discount or 0.0) / 100.0)
+        printed_price_subtotal = printed_price_net * quantity
+
+        not_vat_taxes = [
+            x for x in line.invoice_line_tax_id if
+            x.tax_code_id.parent_id.name != 'IVA']
+        raise UserError(
+            'qty: {}, discount:{}, price unit:{} price net:{}, price subtotal:{} not vat:{}'.format(
+                quantity, discount, printed_price_unit, printed_price_net,
+                printed_price_subtotal, not_vat_taxes[0].name))
+
+        taxes = tax_obj.compute_all(
+            not_vat_taxes, printed_price_net, 1, product=line.product_id,
+            partner=line.invoice_id.partner_id)
+        other_taxes_amount = _round(
+            taxes['total_included']) - _round(taxes['total'])
+
+        vat_taxes = [
+            x for x in line.invoice_line_tax_id if
+            x.tax_code_id.parent_id.name == 'IVA']
+        taxes = tax_obj.compute_all(vat_taxes, printed_price_net, 1,
+                                    product=line.product_id,
+                                    partner=line.invoice_id.partner_id)
+        vat_amount = _round(
+            taxes['total_included']) - _round(taxes['total'])
+
+        exempt_amount = 0.0
+        if not vat_taxes:
+            exempt_amount = _round(taxes['total_included'])
+
+        # For document that not discriminate we include the prices
+        if not line.invoice_id.vat_discriminated:
+            printed_price_unit = _round(
+                taxes['total_included'] * (1 + (discount or 0.0) / 100.0))
+            printed_price_net = _round(taxes['total_included'])
+            printed_price_subtotal = _round(
+                taxes['total_included'] * quantity)
+
+        res[line.id] = {
+            'printed_price_unit': printed_price_unit,
+            'printed_price_net': printed_price_net,
+            'printed_price_subtotal': printed_price_subtotal,
+            'vat_amount': vat_amount * quantity,
+            'other_taxes_amount': other_taxes_amount * quantity,
+            'exempt_amount': exempt_amount * quantity,
+        }
+        return res
 
     def product_is_exempt(self, line):
         """
@@ -896,6 +965,7 @@ at a time.')
             ind_exe_qty = 0
             sum_lines = 0
             MntExe = 0
+            MntTotal = 0
             for line in inv.invoice_line:
                 # se hizo de esta manera para que no dé error
                 try:
@@ -923,14 +993,20 @@ at a time.')
                     # cálculos de impuestos, se impide colocar items exentos
                     # en una factura afecta
                     if inv.sii_document_class_id.sii_code == 33:
-                        raise UserError('''Esta implementación no permite \
-facturar items exentos en facturas afectas. Cambie el tipo de documento \
-o elimine el producto exento de esta factura.
+                        raise UserError('''Si bien es legalmente posible \
+facturar ítems exentos como adicionales a items afectos en una factura afecta,\
+esta implementación no permite hacerlo. Cambie el tipo de documento, o elimine \
+el producto exento de este documento.
 Producto que provocó el problema: {}'''.format(line.product_id.name))
                     lines['IndExe'] = 1
                     ind_exe_qty += 1
                     MntExe +=int(round(line.price_subtotal, 0))
-
+                else:
+                    if inv.sii_document_class_id.sii_code not in [33]:
+                        raise UserError('''Está intentando facturar un ítem \
+afecto en una factura exenta. No es posible hacer esta operación. Cambie el \
+tipo de documento o elimine el producto afecto de este documento.
+Producto que provocó el problema: {}'''.format(line.product_id.name))
                 lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
                 lines['DscItem'] = line.name
                 # si es cero y es nota de crédito o debito, los salteo a los dos
@@ -972,7 +1048,7 @@ is {} does not match'.format(inv.sii_document_class_id.sii_code)))
             if len(inv.ref_document_ids) > 0:
                 _logger.info(inv.ref_document_ids)
                 # inserción del detalle en caso que corresponda
-                #if inv.sii_document_class_id.sii_code in [61, 56]:
+                # if inv.sii_document_class_id.sii_code in [61, 56]:
                 ref_order = 1
                 for ref_d in inv.ref_document_ids:
                     referencias = collections.OrderedDict()
@@ -1082,7 +1158,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 inv.partner_id.city)
             #################################################
             if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-                # no se envían los totales a LibreDTE
                 dte['Encabezado']['Totales'] = collections.OrderedDict()
                 if inv.sii_document_class_id.sii_code == 34:
                     # en el caso que haya un tipo 34, el monto
@@ -1109,6 +1184,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     dte['Encabezado']['Totales']['IVA'] = MntTotal - dte[
                         'Encabezado']['Totales']['MntNeto']
                     dte['Encabezado']['Totales']['MntTotal'] = MntTotal
+                # este if es el que estaba arriba, en el True
                 dte['item'] = invoice_lines
                 if len(ref_lines) > 0:
                     dte['item'].extend(ref_lines)
@@ -1119,7 +1195,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['Detalle'] = invoice_lines
                 if len(ref_lines) > 0:
                     dte['Referencia'] = ref_lines
-            # aca estaba la referencia antes
             if global_discount != 0:
                 dte['DscRcgGlobal'] = collections.OrderedDict()
                 dte['DscRcgGlobal']['NroLinDR'] = 1

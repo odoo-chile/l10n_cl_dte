@@ -44,5 +44,10 @@ el proyecto de localización argentina, pero solo en formas, no en código.
 
 
 #### Versions:
-8.1.0.0.0
+8.1.0.0
 - This version includes multiple references, for invoices and credit notes.
+- You can see the new [CHANGELOG.md](CHANGELOG.md) in Spanish
+
+#### Contributions:
+See the following file:
+[CONTRIBUTING.md](CONTRIBUTING.md)

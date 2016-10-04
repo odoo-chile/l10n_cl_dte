@@ -61,6 +61,56 @@ class invoice(models.Model):
 
     _inherit = "account.invoice"
 
+    def enviar_ldte(self, inv, headers, dte):
+        '''
+        Función para enviar el dte a libreDTE
+        @author: Daniel Blanco
+        @version: 2016-10-03
+        :param headers:
+        :param dte:
+        :return:
+        '''
+        if 1==1:
+            response_emitir = pool.urlopen(
+                'POST', api_emitir, headers=headers, body=json.dumps(
+                    dte))
+            if response_emitir.status != 200:
+                raise UserError(
+                    'Error en conexión al emitir: {}, {}'.format(
+                        response_emitir.status, response_emitir.data))
+            _logger.info('response_emitir: {}'.format(
+                response_emitir.data))
+            try:
+                inv.sii_xml_response1 = response_emitir.data
+            except:
+                _logger.warning(
+                    'no pudo guardar la respuesta al ws de emision')
+            '''
+            {"emisor": ----, "receptor": -, "dte": --,
+             "codigo": "-----"}
+            '''
+            response_emitir_data = response_emitir.data
+        else:
+            _logger.info('Obteniendo XML de preemision existente...')
+            response_emitir_data = inv.sii_xml_response1
+        response_j = self.bring_xml_ldte(response_emitir_data)
+        self.set_folio(inv, response_j['folio'])
+        _logger.info('Este es el XML decodificado:')
+        _logger.info(base64.b64decode(response_j['xml']))
+        try:
+            inv.sii_xml_request = self.convert_encoding(
+                base64.b64decode(response_j['xml']))
+        except:
+            pass
+            _logger.warning(
+                'no pudo codificar y guardar el documento... ')
+        try:
+            self.bring_pdf_ldte()
+        except:
+            pass
+            _logger.warning('no pudo traer el pdf')
+        return response_j
+
     ## incorporamos en este lugar nuevas funciones tomadas del stock_voucher
     def record_reference(self, inv, model='invoice.reference'):
         """
@@ -75,6 +125,9 @@ class invoice(models.Model):
         # 'model_object_id': picking/invoice}
         order_obj = self.env['sale.order']
         order_id = order_obj.search([('name', '=', inv.origin)])
+        if not order_id:
+            _logger.info('not order id')
+            return False
         ref_obj = self.env[model]
         sii_ref = self.env.ref('l10n_cl_invoice.dc_ndp')
         vals = {
@@ -1255,63 +1308,11 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 _logger.info(dte)
                 _logger.info('DTE enviado (json)')
                 _logger.info(json.dumps(dte))
-
-                # corte para debug
-                # raise UserError('dictionary generated')
-                # if inv.sii_xml_response1 == False or \
-                # inv.sii_xml_response1 == '':
-                # buscar una manera de forzar el reenvio.
-                # por ahora fuerza el reenvío desde el principio
-                if 1==1:
-                    response_emitir = pool.urlopen(
-                        'POST', api_emitir, headers=headers, body=json.dumps(
-                            dte))
-
-                    if response_emitir.status != 200:
-                        raise UserError(
-                            'Error en conexión al emitir: {}, {}'.format(
-                                response_emitir.status, response_emitir.data))
-                    _logger.info('response_emitir: {}'.format(
-                        response_emitir.data))
-                    try:
-                        inv.sii_xml_response1 = response_emitir.data
-                    except:
-                        _logger.warning(
-                            'no pudo guardar la respuesta al ws de emision')
-                    '''
-                    {"emisor": ----, "receptor": -, "dte": --,
-                     "codigo": "-----"}
-                    '''
-                    response_emitir_data = response_emitir.data
-                else:
-                    _logger.info('Obteniendo XML de preemision existente...')
-                    response_emitir_data = inv.sii_xml_response1
-
-                response_j = self.bring_xml_ldte(response_emitir_data)
-                self.set_folio(inv, response_j['folio'])
-                _logger.info('Este es el XML decodificado:')
-                _logger.info(base64.b64decode(response_j['xml']))
-
-                try:
-                    inv.sii_xml_request = self.convert_encoding(
-                        base64.b64decode(response_j['xml']))
-                except:
-                    pass
-                    _logger.warning(
-                        'no pudo codificar y guardar el documento... ')
-
-                try:
-                    self.bring_pdf_ldte()
-                except:
-                    pass
-                    _logger.warning('no pudo traer el pdf')
-
+                response_j = self.enviar_ldte(inv, headers, dte)
                 inv.write(
                     {
-                        #'third_party_xml': response_j['xml'],
                         'sii_result': 'Enviado',
                         'sii_send_ident': response_j['track_id'],
-                        # 'third_party_pdf': base64.b64encode(invoice_pdf)
                     }
                 )
                 _logger.info('se guardó xml con la factura')

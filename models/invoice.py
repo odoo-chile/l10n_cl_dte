@@ -1007,8 +1007,7 @@ is {} does not match'.format(inv.sii_document_class_id.sii_code)))
             dte['Encabezado']['IdDoc'][
                 'TipoDTE'] = inv.sii_document_class_id.sii_code
             dte['Encabezado']['IdDoc']['Folio'] = folio
-            if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-                dte['Encabezado']['IdDoc']['FchEmis'] = inv.date_invoice
+            dte['Encabezado']['IdDoc']['FchEmis'] = inv.date_invoice
             # todo: forma de pago y fecha de vencimiento - opcional
             dte['Encabezado']['IdDoc'][
                 'FmaPago'] = inv.payment_term.dte_sii_code or 1

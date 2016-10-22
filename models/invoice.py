@@ -77,17 +77,21 @@ class invoice(models.Model):
         order_id = order_obj.search([('name', '=', inv.origin)])
         ref_obj = self.env[model]
         sii_ref = self.env.ref('l10n_cl_invoice.dc_ndp')
-        vals = {
-                'invoice_id': inv.id,
-                'parent_type': model,
-                'name': int(re.sub('[^1234567890]', '', order_id[0].name)),
-                'sii_document_class_id': sii_ref.id,
-                'reference_date': order_id[0].date_confirm,
-                'prefix': sii_ref.doc_code_prefix,
-                'reason': 'Venta Confirmada'}
-                # codref no aplica para este caso, solo notas de crédito/debito
-        _logger.info('grabando la referencia: {}'.format(vals))
-        ref_obj.create(vals)
+        try:
+            vals = {
+                    'invoice_id': inv.id,
+                    'parent_type': model,
+                    'name': int(re.sub('[^1234567890]', '', order_id[0].name)),
+                    'sii_document_class_id': sii_ref.id,
+                    'reference_date': order_id[0].date_confirm,
+                    'prefix': sii_ref.doc_code_prefix,
+                    'reason': 'Venta Confirmada'}
+                    # codref no aplica para este caso, solo notas de crédito/debito
+            _logger.info('grabando la referencia: {}'.format(vals))
+            ref_obj.create(vals)
+        except:
+            pass
+            _logger.info('No existe referencia automática a nota de pedido')
 
     def clean_relationships(self, model='invoice.reference'):
         """

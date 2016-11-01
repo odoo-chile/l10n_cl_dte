@@ -242,7 +242,7 @@ Linux/3.13.0-88-generic'
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-01
         """
-        if 1==1:
+        if True:
             validacion_type = {
                 'doc': 'DTE_v10.xsd',
                 'env': 'EnvioDTE_v10.xsd',
@@ -259,6 +259,9 @@ Linux/3.13.0-88-generic'
             except XMLSyntaxError as e:
                 _logger.info(_("The Document XML file has error: %s") % e.args)
                 raise UserError(_('XML Malformed Error %s') % e.args)
+        else:
+            # manejo de otras acciones futuras
+            pass
 
     @api.multi
     def check_dte_status(self):
@@ -388,8 +391,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         boton, pero trambién se podría cambiar aejecutar automaticamente,
         pienso que es más conveniente tratar todas las opciones de provider
         en la misma funcion.
-        La funcion selecciona el proveedor de servicio de DTE y efectua el envio
-        de acuerdo a la integracion del proveedor.
+        La funcion selecciona el proveedor de servicio de DTE y efectua el
+        envio de acuerdo a la integracion del proveedor.
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-01
         """
@@ -473,7 +476,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-05-01
         """
-        # raise UserError(self.company_id.dte_service_provider)
         return self.company_id.dte_service_provider
 
     def get_folio_current(self):
@@ -492,6 +494,11 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         return int(folio)
 
     def format_vat(self, value):
+        """
+        Reformateo de RUT desde el formato de Odoo a DV separado por guion
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-05-01
+        """
         return value[2:10] + '-' + value[10:]
 
 
@@ -570,7 +577,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             ('SII MiPyme', 'SII - Portal MiPyme'),
         ), 'DTE Service Provider',
         related='company_id.dte_service_provider',
-        #default=get_company_dte_service_provider,
         readonly=True)
 
     # estas referencias existen de la versión anterior (8.0.1.3)
@@ -694,7 +700,7 @@ stamp to be legally valid.''')
     directamente desde libreDTE
     podria existir la posibilidad técnica de imprimir la factura
     desde odoo con otro módulo l10n_cl_dte_pdf
-    o desde esta "función"
+    o desde esta función
     obtener el PDF desde LibreDTE
     '''
     @api.multi
@@ -762,6 +768,7 @@ stamp to be legally valid.''')
         la condición deseada. (empiezan con DTE_)
         autor de la modificacion: Daniel Blanco - daniel[at]blancomartin.cl
         @version: 2016-06-27
+        (original de Odoo modificado)
         Open a window sentto compose an email, with the edi invoice template
         message loaded by default
         """
@@ -805,15 +812,17 @@ at a time.')
             'target': 'new',
             'context': ctx,
         }
-    '''
-    Funcion que reemplaza función de botón imprimir para generar PDF
-    con cedible, función solo para LibreDTE.
-    TODO: poner comprobación de existencia de PDF al principio
-    autor: Juan Plaza - jplaza@isos.cl basado en función de Daniel Blanco
-    @version: 2016-09-28
-    '''
+
     @api.multi
     def invoice_print(self):
+        '''
+        Funcion que reemplaza función de botón imprimir para generar PDF
+        con cedible, función solo para LibreDTE.
+        TODO: poner comprobación de existencia de PDF al principio
+        autor: Juan Plaza - jplaza@isos.cl basado en función de Daniel Blanco
+        @version: 2016-09-28
+        log: Daniel Blanco: modificada para mejorar sintaxis (lint)
+        '''
         _logger.info('entrando a impresion de factura desde boton de arriba')
         self.ensure_one()
         _logger.info('entrada a invoice print function')
@@ -823,7 +832,11 @@ at a time.')
         # pero prefiero del adjunto
         dte_xml = self.get_xml_attachment()
         genera_pdf_request = json.dumps(
-            {'xml': dte_xml, 'cedible': 1, 'copias_tributarias': 1, 'copias_cedibles': 1, 'compress': False})
+            {'xml': dte_xml,
+             'cedible': 1,
+             'copias_tributarias': 1,
+             'copias_cedibles': 1,
+             'compress': False})
         _logger.info(genera_pdf_request)
         response_pdf = pool.urlopen(
             'POST', api_gen_pdf, headers=headers,
@@ -835,26 +848,31 @@ at a time.')
         # assert len(self) == 1, self.sent = True
         # return self.env['report'].get_action(self, 'account.report_invoice')
         attachment_obj = self.env['ir.attachment']
-        if attachment_obj.search([('res_model', '=', self._name), ('res_id', '=', self.id,), ('name', 'like', 'cedible')]):
+        if attachment_obj.search(
+                [('res_model', '=', self._name),
+                 ('res_id', '=', self.id,), ('name', 'like', 'cedible')]):
             new_attach = attachment_obj.search(
-                [('res_model', '=', self._name), ('res_id', '=', self.id,), ('name', 'like', 'cedible')])
+                [('res_model', '=', self._name), ('res_id', '=', self.id),
+                 ('name', 'like', 'cedible')])
 
         else:
             new_attach = attachment_obj.create(
                 {
-                    'name': 'DTE_' + self.sii_document_class_id.name + '-' + self.sii_document_number + 'cedible.pdf',
+                    'name': 'DTE_' + self.sii_document_class_id.name + '-' \
+                            + self.sii_document_number + 'cedible.pdf',
                     'datas': invoice_pdf,
-                    'datas_fname': 'DTE_' + self.sii_document_class_id.name + '-' + self.sii_document_number + 'cedible.pdf',
+                    'datas_fname': 'DTE_' + self.sii_document_class_id.name \
+                                   + '-' + self.sii_document_number \
+                                   + 'cedible.pdf',
                     'res_model': self._name,
                     'res_id': self.id,
-                    'type': 'binary'
-                })
+                    'type': 'binary'})
 
         return {
             'type': 'ir.actions.act_url',
-            'url': '/web/binary/saveas?model=ir.attachment&field=datas&filename_field=name&id=%s' % (new_attach.id,),
-            'target': 'self',
-        }
+            'url': '/web/binary/saveas?model=ir.attachment&field=datas&\
+filename_field=name&id=%s' % (new_attach.id,),
+            'target': 'self'}
 
     @api.multi
     def action_number(self):
@@ -1300,8 +1318,6 @@ does not exist.")
 needed for credit notes and debit notes.")
     # RazonRef "descuento por pronto pago" o "error en precio"
     reason = fields.Char('Reason', help="Related to <RazonRef>.")
-
-    #doc_princ_sii_code = fields.Integer('Documento Principal', compute='')
 
 
     @api.multi

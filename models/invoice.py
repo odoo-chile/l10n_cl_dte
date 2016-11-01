@@ -22,14 +22,15 @@ pip install --upgrade urllib3
 '''
 
 pool = urllib3.PoolManager(
-    cert_reqs='CERT_REQUIRED', # Force certificate check.
-    ca_certs=certifi.where(),  # Path to the Certifi bundle.
-)
+    cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
+# Force certificate check.
+# Path to the Certifi bundle.
+
 _logger = logging.getLogger(__name__)
 
 # hardcodeamos este valor por ahora
 xsdpath = os.path.dirname(os.path.realpath(__file__)).replace(
-    '/models','/static/xsd/')
+    '/models', '/static/xsd/')
 host = 'https://libredte.cl/api'
 api_emitir = host + '/dte/documentos/emitir'
 api_generar = host + '/dte/documentos/generar'
@@ -48,16 +49,15 @@ special_chars = [
     [u'Í', 'I'],
     [u'Ó', 'O'],
     [u'Ú', 'U'],
-    [u'Ñ', 'N']
-]
+    [u'Ñ', 'N']]
 
 class invoice(models.Model):
-    '''
+    """
     Extensión del modelo de datos para contener parámetros globales necesarios
     para todas las integraciones de factura electrónica.
     @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
     @version: 2016-06-11
-    '''
+    """
 
     _inherit = "account.invoice"
 
@@ -1101,10 +1101,10 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 inv.partner_id.state_id.name)
             dte['Encabezado']['Receptor']['CiudadRecep'] = self.char_replace(
                 inv.partner_id.city)
+            dte['Encabezado']['Totales'] = collections.OrderedDict()
             #################################################
             if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-                # no se envían los totales a LibreDTE
-                dte['Encabezado']['Totales'] = collections.OrderedDict()
+                # (ficticio, para forzar envío)
                 if inv.sii_document_class_id.sii_code == 34:
                     # en el caso que haya un tipo 34, el monto
                     # exento va a coincidir con el total de la factura.
@@ -1134,6 +1134,8 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 if len(ref_lines) > 0:
                     dte['item'].extend(ref_lines)
             else:
+                if inv.sii_document_class_id.sii_code == 34:
+                    dte['Encabezado']['Totales']['MntExe'] = 0
                 # esto lo hace para libreDTE la construccion directa del valor
                 # en el diccionario. Porque en las otras opciones de XML
                 # hay problemas en esta parte al pasar de dict a xml
@@ -1149,6 +1151,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['DscRcgGlobal']['TpoValor'] = '$'  # ''%'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
             _logger.info(dte)
+            # raise UserError('punto de control')
             doc_id_number = "F{}T{}".format(
                 folio, inv.sii_document_class_id.sii_code)
             doc_id = '<Documento ID="{}">'.format(doc_id_number)
@@ -1208,7 +1211,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 # inv.sii_xml_response1 == '':
                 # buscar una manera de forzar el reenvio.
                 # por ahora fuerza el reenvío desde el principio
-                if 1==1:
+                if True:
                     response_emitir = pool.urlopen(
                         'POST', api_emitir, headers=headers, body=json.dumps(
                             dte))
@@ -1258,8 +1261,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                         'sii_result': 'Enviado',
                         'sii_send_ident': response_j['track_id'],
                         # 'third_party_pdf': base64.b64encode(invoice_pdf)
-                    }
-                )
+                    })
                 _logger.info('se guardó xml con la factura')
             # incorporo facturacion.cl (sólo DTE Plano)
             elif inv.dte_service_provider == 'FACTURACION':
@@ -1318,7 +1320,6 @@ does not exist.")
 needed for credit notes and debit notes.")
     # RazonRef "descuento por pronto pago" o "error en precio"
     reason = fields.Char('Reason', help="Related to <RazonRef>.")
-
 
     @api.multi
     @api.depends('sii_document_class_id')

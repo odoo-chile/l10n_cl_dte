@@ -79,17 +79,141 @@ special_chars = [
     [u'Ú', 'U'],
     [u'Ñ', 'N']]
 
-class invoice(models.Model):
+
+class Invoice(models.Model):
     """
-    Extensión del modelo de datos para contener parámetros globales necesarios
-    para todas las integraciones de factura electrónica.
+    Extension of data model to contain global parameters needed
+    for all electronic invoice integration.
     @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
     @version: 2016-06-11
     """
-
     _inherit = "account.invoice"
 
-    ## incorporamos en este lugar nuevas funciones tomadas del stock_voucher
+    @staticmethod
+    def char_replace(text):
+        """
+        Funcion para reemplazar caracteres especiales
+        Esta funcion sirve para salvar bug en libreDTE con los recortes de
+        giros que están codificados en utf8 (cuando trunca, trunca la
+        codificacion)
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-07-31
+        """
+        for char in special_chars:
+            try:
+                text = text.replace(char[0], char[1])
+            except:
+                pass
+        print(text)
+        return text
+
+    @staticmethod
+    def create_template_doc(doc):
+        """
+        Creacion de plantilla xml para envolver el DTE
+        Previo a realizar su firma (1)
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-01
+        """
+        xml = '''<DTE xmlns="http://www.sii.cl/SiiDte" version="1.0">
+    <!-- Odoo Implementation Blanco Martin -->
+    {}</DTE>'''.format(doc)
+        return xml
+
+    @staticmethod
+    def get_folio(inv):
+        """
+        Funcion para descargar el folio tomando el valor desde la secuencia
+        correspondiente al tipo de documento.
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-05-01
+        """
+        # saca el folio directamente de la secuencia
+        return inv.journal_document_class_id.sequence_id.number_next_actual
+
+    @staticmethod
+    def set_folio(inv, folio):
+        """
+        Funcion para actualizar el folio tomando el valor devuelto por el
+        tercera parte integrador.
+        Esta funcion se usa cuando un tercero comanda los folios
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-23
+        """
+        inv.journal_document_class_id.sequence_id.number_next_actual = folio
+
+    @staticmethod
+    def remove_indents(xml):
+        """
+        Funcion para remover los indents del documento previo a enviar el xml
+        a firmaar. Realizada para probar si el problema de
+        error de firma proviene de los indents.
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-01
+        """
+        return xml.replace(
+            '        <', '<').replace(
+            '      <', '<').replace(
+            '    <', '<').replace(
+            '  <', '<')
+
+    @staticmethod
+    def convert_encoding(data, new_coding='UTF-8'):
+        """
+        Funcion auxiliar para conversion de codificacion de strings
+        proyecto experimentos_dte
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2014-12-01
+        """
+        encoding = cchardet.detect(data)['encoding']
+        if new_coding.upper() != encoding.upper():
+            data = data.decode(encoding, data).encode(new_coding)
+        return data
+
+    @staticmethod
+    def what_is_this(s):
+        """
+        Funcion auxiliar para saber que codificacion tiene el string
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-01
+        """
+        if isinstance(s, str):
+            _logger.info("ordinary string")
+        elif isinstance(s, unicode):
+            _logger.info("unicode string")
+        else:
+            _logger.info("not a string")
+
+    @staticmethod
+    def xml_validator(some_xml_string, validation='doc'):
+        """
+        Funcion para validar los xml generados contra el esquema que le
+        corresponda segun el tipo de documento.
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-01
+        """
+        if True:
+            validation_type = {
+                'doc': 'DTE_v10.xsd',
+                'env': 'EnvioDTE_v10.xsd',
+                'sig': 'xmldsignature_v10.xsd'
+            }
+            xsd_file = xsdpath + validation_type[validation]
+            try:
+                schema = etree.XMLSchema(file=xsd_file)
+                parser = objectify.makeparser(schema=schema)
+                objectify.fromstring(some_xml_string, parser)
+                _logger.info(_("The Document XML file validated correctly: \
+(%s)") % validation)
+                return True
+            except XMLSyntaxError as e:
+                _logger.info(
+                    _("The Document XML file has error: %s") % e.args)
+                raise UserError(_('XML Malformed Error %s') % e.args)
+        else:
+            # manejo de otras acciones futuras
+            pass
+
     def record_reference(self, inv, model='invoice.reference'):
         """
         Función para guardar como referencia la nota de pedido en el picking
@@ -103,9 +227,41 @@ class invoice(models.Model):
         # other order_id = order_id, picking id
         # order_mode = {'order_id': order_id_object,
         # 'model_object_id': picking/invoice}
-        order_obj = self.env['sale.order']
-        order_id = order_obj.search([('name', '=', inv.origin)])
+
+        #### primero picking
         ref_obj = self.env[model]
+        picking_obj = self.env['stock.picking']
+        picking_id = picking_obj.search([('name', '=', inv.origin)])
+        sale_order = inv.origin
+        if picking_id[0]:
+            sale_order = picking_id[0].origin
+            for picking_voucher in picking_id[0].voucher_ids:
+                # raise UserError(
+                # picking_voucher.book_id.sii_document_class_id.doc_code_prefix)
+                if True: #try:
+                    vals = {
+                        'invoice_id': inv.id,
+                        'parent_type': model,
+                        'name': int(
+                            re.sub(
+                                '[^1234567890]', '', picking_voucher.number)),
+                        'sii_document_class_id':
+                            picking_voucher.book_id.sii_document_class_id.id,
+                        'reference_date':
+                            picking_voucher.create_date,
+                        'prefix':
+                            picking_voucher.book_id.
+                            sii_document_class_id.doc_code_prefix,
+                        'reason': 'Mercadería enviada'}
+                    _logger.info('grabando la referencia: {}'.format(vals))
+                    ref_obj.create(vals)
+                else: #except:
+                    pass
+                    _logger.info(
+                        'Automatic reference to stock voucher does not exist')
+
+        order_obj = self.env['sale.order']
+        order_id = order_obj.search([('name', '=', sale_order)])
         sii_ref = self.env.ref('l10n_cl_invoice.dc_ndp')
         try:
             vals = {
@@ -116,32 +272,11 @@ class invoice(models.Model):
                     'reference_date': order_id[0].date_confirm,
                     'prefix': sii_ref.doc_code_prefix,
                     'reason': 'Venta Confirmada'}
-                    # codref no aplica para este caso, solo notas de
-                    # crédito/debito
-            _logger.info('grabando la referencia: {}'.format(vals))
+            _logger.info(_('Saving the reference: {}'.format(vals)))
             ref_obj.create(vals)
         except:
             pass
-            _logger.info('No existe referencia automática a nota de pedido')
-        picking_obj = self.env['stock.picking']
-        picking_id = picking_obj.search([('name', '=', inv.origin)])
-        for picking_voucher in picking_id.voucher_ids:
-            try:
-                vals = {
-                    'invoice_id': inv.id,
-                    'parent_type': model,
-                    'name': int(
-                        re.sub('[^1234567890]', '', picking_voucher.number,)),
-                    'sii_document_class_id': picking_voucher.book_id.sii_document_class_id,
-                    'reference_date': picking_voucher.book_id.sii_document_class_id,
-                    'prefix': picking_voucher.book_id.sii_document_class_id.doc_code_prefix,
-                    'reason': 'Mercadería enviada'}
-                _logger.info('grabando la referencia: {}'.format(vals))
-                ref_obj.create(vals)
-            except:
-                pass
-                _logger.info(
-                    'No existe referencia automática a guias de despacho')
+            _logger.info(_('Automatic reference to sale order does not exist'))
 
     def clean_relationships(self, model='invoice.reference'):
         """
@@ -163,35 +298,6 @@ class invoice(models.Model):
         """
         invoice_id = self.invoice_id
         invoice_id.sii_xml_request = False
-
-    def char_replace(self, text):
-        """
-        Funcion para reemplazar caracteres especiales
-        Esta funcion sirve para salvar bug en libreDTE con los recortes de
-        giros que están codificados en utf8 (cuando trunca, trunca la
-        codificacion)
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-07-31
-        """
-        for char in special_chars:
-            try:
-                text = text.replace(char[0], char[1])
-            except:
-                pass
-        print(text)
-        return text
-
-    def create_template_doc(self, doc):
-        """
-        Creacion de plantilla xml para envolver el DTE
-        Previo a realizar su firma (1)
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-01
-        """
-        xml = '''<DTE xmlns="http://www.sii.cl/SiiDte" version="1.0">
-<!-- Odoo Implementation Blanco Martin -->
-{}</DTE>'''.format(doc)
-        return xml
 
     def create_template_envio(self, RutEmisor, RutReceptor, FchResol, NroResol,
                               TmstFirmaEnv, TpoDTE, EnvioDTE):
@@ -221,45 +327,6 @@ class invoice(models.Model):
            FchResol, NroResol, TmstFirmaEnv, TpoDTE, EnvioDTE)
         return xml
 
-    def remove_indents(self, xml):
-        """
-        Funcion para remover los indents del documento previo a enviar el xml
-        a firmaar. Realizada para probar si el problema de
-        error de firma proviene de los indents.
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-01
-        """
-        return xml.replace(
-            '        <', '<').replace(
-            '      <', '<').replace(
-            '    <', '<').replace(
-            '  <', '<')
-
-    def convert_encoding(self, data, new_coding='UTF-8'):
-        """
-        Funcion auxiliar para conversion de codificacion de strings
-        proyecto experimentos_dte
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2014-12-01
-        """
-        encoding = cchardet.detect(data)['encoding']
-        if new_coding.upper() != encoding.upper():
-            data = data.decode(encoding, data).encode(new_coding)
-        return data
-
-    def whatisthis(self, s):
-        """
-        Funcion auxiliar para saber que codificacion tiene el string
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-01
-        """
-        if isinstance(s, str):
-            _logger.info("ordinary string")
-        elif isinstance(s, unicode):
-            _logger.info("unicode string")
-        else:
-            _logger.info("not a string")
-
     def create_headers_ldte(self, comp_id=False):
         """
         Función para crear los headers necesarios por LibreDTE
@@ -285,35 +352,6 @@ Linux/3.13.0-88-generic'
         headers['Connection'] = 'keep-alive'
         headers['Content-Type'] = 'application/json'
         return headers
-
-
-    def xml_validator(self, some_xml_string, validacion='doc'):
-        """
-        Funcion para validar los xml generados contra el esquema que le
-        corresponda segun el tipo de documento.
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-01
-        """
-        if True:
-            validacion_type = {
-                'doc': 'DTE_v10.xsd',
-                'env': 'EnvioDTE_v10.xsd',
-                'sig': 'xmldsignature_v10.xsd'
-            }
-            xsd_file = xsdpath+validacion_type[validacion]
-            try:
-                schema = etree.XMLSchema(file=xsd_file)
-                parser = objectify.makeparser(schema=schema)
-                objectify.fromstring(some_xml_string, parser)
-                _logger.info(_("The Document XML file validated correctly: \
-(%s)") % validacion)
-                return True
-            except XMLSyntaxError as e:
-                _logger.info(_("The Document XML file has error: %s") % e.args)
-                raise UserError(_('XML Malformed Error %s') % e.args)
-        else:
-            # manejo de otras acciones futuras
-            pass
 
     @api.multi
     def check_dte_status(self):
@@ -502,26 +540,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             'target': 'self',
         }
 
-    def get_folio(self, inv):
-        """
-        Funcion para descargar el folio tomando el valor desde la secuencia
-        correspondiente al tipo de documento.
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-05-01
-        """
-        # saca el folio directamente de la secuencia
-        return inv.journal_document_class_id.sequence_id.number_next_actual
-
-    def set_folio(self, inv, folio):
-        """
-        Funcion para actualizar el folio tomando el valor devuelto por el
-        tercera parte integrador.
-        Esta funcion se usa cuando un tercero comanda los folios
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-23
-        """
-        inv.journal_document_class_id.sequence_id.number_next_actual = folio
-
     def get_company_dte_service_provider(self):
         """
         Funcion que devuelve el service provider desde la compañia
@@ -545,7 +563,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             folio = self.sii_document_number
         return int(folio)
 
-    def format_vat(self, value):
+    @staticmethod
+    def format_vat(value):
         """
         Reformateo de RUT desde el formato de Odoo a DV separado por guion
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
@@ -637,10 +656,10 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
     de datos ante un cleanup de la bdd.
     --------------------------------------------------------------
     '''
-    sii_referencia_TpoDocRef = fields.Char('TpoDocRef')
-    sii_referencia_FolioRef =  fields.Char('FolioRef')
-    sii_referencia_FchRef = fields.Char('FchRef')
-    sii_referencia_CodRef = fields.Char('CodRef')
+    # sii_referencia_TpoDocRef = fields.Char('TpoDocRef')
+    # sii_referencia_FolioRef =  fields.Char('FolioRef')
+    # sii_referencia_FchRef = fields.Char('FchRef')
+    # sii_referencia_CodRef = fields.Char('CodRef')
 
     # campos nuevos para incluir referencias relacionales
     # (para no tener un limiteen la cantidad de referencias al documento)
@@ -801,8 +820,8 @@ stamp to be legally valid.''')
             _logger.info('Se ha generado factura en PDF con el id {}'.format(
                 attachment_id))
 
-
-    def product_is_exempt(self, line):
+    @staticmethod
+    def product_is_exempt(line):
         """
         Función para determinar si el producto de la linea corriente es exento
         :param line:
@@ -929,7 +948,7 @@ filename_field=name&id=%s' % (new_attach.id,),
     def action_number(self):
         self.button_reset_taxes()
         self.do_dte_send_invoice()
-        res = super(invoice, self).action_number()
+        res = super(Invoice, self).action_number()
         return res
 
     @api.multi
@@ -940,10 +959,11 @@ filename_field=name&id=%s' % (new_attach.id,),
             if inv.type[:2] == 'in':
                 continue
             # control de DTE
-            if inv.sii_document_class_id.dte == False:
+            # raise UserError(inv.sii_document_class_id.dte)
+            if not inv.sii_document_class_id.dte:
                 continue
             # control de DTE
-            cant_doc_batch = cant_doc_batch + 1
+            cant_doc_batch += 1
 
             # aca se incorpora el grabar la referencia del pedido
             if inv.origin:
@@ -961,9 +981,9 @@ filename_field=name&id=%s' % (new_attach.id,),
                 return
 
             # definicion de los giros del emisor
-            giros_emisor = []
-            for turn in inv.company_id.company_activities_ids:
-                giros_emisor.extend([{'Acteco': turn.code}])
+            # giros_emisor = []
+            # for turn in inv.company_id.company_activities_ids:
+            #     giros_emisor.extend([{'Acteco': turn.code}])
             # definicion de lineas
             line_number = 1
             invoice_lines = []
@@ -973,14 +993,17 @@ filename_field=name&id=%s' % (new_attach.id,),
             MntExe = 0
             # journal_document_class_id manda
 
-            inv.sii_document_class_id = inv.journal_document_class_id.sii_document_class_id
-            _logger.info('doc class id: {} . sii doc class id: {}, sii_code:. {}'.format(
+            inv.sii_document_class_id = \
+                inv.journal_document_class_id.sii_document_class_id
+            _logger.info('doc class id: {} . sii doc class id: {}, \
+sii_code:. {}'.format(
                 inv.sii_document_class_id,
                 inv.journal_document_class_id.sii_document_class_id,
                 inv.journal_document_class_id.sii_document_class_id.sii_code))
             sii_code = inv.sii_document_class_id.sii_code
             # corrige un problema de
-            # dcsii_id = self.env['sii.document_class'].search([('sii_code', '=', sii_code)], limit=1)
+            # dcsii_id = self.env['sii.document_class'].search(
+            # [('sii_code', '=', sii_code)], limit=1)
             # raise UserError(sii_code)
             for line in inv.invoice_line:
                 # se hizo de esta manera para que no dé error
@@ -1075,7 +1098,7 @@ is {} does not match'.format(sii_code)))
                     if ref_d.codref:
                         referencias['CodRef'] = ref_d.codref
                     if ref_d.reason:
-                        referencias['RazonRef'] = ref_d.reason
+                        referencias['RazonRef'] = inv.char_replace(ref_d.reason)
                     ref_order += 1
                     if inv.dte_service_provider not in [
                         'LIBREDTE', 'LIBREDTE_TEST']:
@@ -1113,14 +1136,10 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Emisor']['RznSoc'] = inv.company_id.name
             dte['Encabezado']['Emisor']['GiroEmis'] = self.char_replace(
                 inv.turn_issuer.name)[:80]
-            if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-                dte['Encabezado']['Emisor']['item'] = giros_emisor
-                # giros de la compañia - codigos
-            else:
-                dte['Encabezado']['Emisor']['Acteco'] = inv.turn_issuer.code
-                # dte['Encabezado']['Emisor']['Acteco'] = giros_emisor
-                #  giros de la compañia - codigos
-            # todo: Telefono y Correo opcional
+            # if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
+            #     dte['Encabezado']['Emisor']['item'] = giros_emisor
+            #     # giros de la compañia - codigos
+            # else:
             dte['Encabezado']['Emisor']['Telefono'] = inv.company_id.phone or ''
             dte['Encabezado']['Emisor'][
                 'CorreoEmisor'] = inv.company_id.dte_email
@@ -1132,11 +1151,9 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             # al name seleccionado.
             dte['Encabezado']['Emisor']['Acteco'] = inv.char_replace(
                 inv.turn_issuer.code)
-            # dte['Encabezado']['Emisor']['item'] = giros_emisor
-            #  giros de la compañia - codigos
-            # todo: <CdgSIISucur>077063816</CdgSIISucur> codigo de sucursal
-            # no obligatorio si no hay sucursal, pero es un numero entregado
-            # por el SII para cada sucursal.
+            if inv.journal_id.point_of_sale_id.name not in ['', '---', True]:
+                dte['Encabezado']['Emisor']['CdgSIISucur'] =\
+                    inv.journal_id.point_of_sale_id.name
             # este deberia agregarse al "punto de venta" el cual ya esta
             dte['Encabezado']['Emisor']['DirOrigen'] = self.char_replace(
                 inv.company_id.street)
@@ -1358,7 +1375,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                         # 'third_party_pdf': base64.b64encode(invoice_pdf)
                     })
                 _logger.info('se guardó xml con la factura')
-            # incorporo facturacion.cl (sólo DTE Plano)
             elif inv.dte_service_provider == 'FACTURACION':
                 envelope_efact = '''<?xml version="1.0" encoding="ISO-8859-1"?>
 {}'''.format(self.convert_encoding(xml_pret, 'ISO-8859-1'))
@@ -1371,7 +1387,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 raise UserError('None DTE Provider Option')
 
 
-class invoiceReference(models.Model):
+class InvoiceReference(models.Model):
     _name = "invoice.reference"
     '''
     C<NroLinRef> ordinal. No se incluye. Se debe calcular al crear el
@@ -1385,7 +1401,6 @@ class invoiceReference(models.Model):
     N<IdAdicOtr> no implementado (por ahora)
     N<IndGlobal> no se incluye
     '''
-
     # Esta Factura
     invoice_id = fields.Many2one(
         'account.invoice', 'Invoice',
@@ -1419,6 +1434,7 @@ needed for credit notes and debit notes.")
     @api.multi
     @api.depends('sii_document_class_id')
     def _compute_ref(self):
+        # raise UserError('control reference')
         for i in self:
             if not i.sii_document_class_id.sii_code \
                     and i.sii_document_class_id.doc_code_prefix:

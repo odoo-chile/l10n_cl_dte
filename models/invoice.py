@@ -5,28 +5,56 @@
 ##############################################################################
 from openerp import fields, models, api, _
 from openerp.exceptions import Warning as UserError
-import logging, json
-import lxml.etree as etree
+from datetime import datetime, timedelta
+import logging, re, json, os
+from lxml import etree
+from lxml.etree import Element, SubElement
 from lxml import objectify
 from lxml.etree import XMLSyntaxError
+import pytz
+import collections
+import urllib3
+import textwrap
+import xmltodict
+import dicttoxml
+from elaphe import barcode
+import M2Crypto
+import base64
+import hashlib
+import cchardet
+import ssl
+from SOAPpy import SOAPProxy
+# from signxml import xmldsig, methods
+from signxml import *
+"""
+[
+    'DERSequenceOfIntegers', 'Element', 'Enum', 'Hash', 'InvalidCertificate',
+    'InvalidDigest', 'InvalidInput', 'InvalidSignature', 'Namespace',
+    'PKCS1v15', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'SubElement',
+    'VerifyResult', 'XMLProcessor', 'XMLSignatureProcessor', 'XMLSigner',
+    'XMLVerifier', '__builtins__', '__doc__', '__file__', '__name__',
+    '__package__', '__path__', '_remove_sig', 'absolute_import',
+    'add_pem_header', 'b64decode', 'b64encode', 'bytes', 'bytes_to_long',
+    'default_backend', 'der_decoder', 'der_encoder', 'division', 'ds_tag',
+    'dsa', 'dsig11_tag', 'ec', 'ensure_bytes', 'ensure_str', 'etree',
+    'exceptions', 'fromstring', 'iterate_pem', 'long_to_bytes', 'methods',
+    'namedtuple', 'namespaces', 'print_function', 'rsa', 'str',
+    'strip_pem_header', 'unicode_literals', 'util', 'verify_x509_cert_chain'
+]
 
-import collections, re
+"""
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+import OpenSSL
+from OpenSSL.crypto import *
 
-import urllib3, certifi, xmltodict, dicttoxml, base64, cchardet, os
-
-urllib3.disable_warnings()
-'''
-pip install --upgrade requests
-y
-pip install --upgrade urllib3
-'''
-
-pool = urllib3.PoolManager(
-    cert_reqs='CERT_REQUIRED', ca_certs=certifi.where())
-# Force certificate check.
-# Path to the Certifi bundle.
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
 
 _logger = logging.getLogger(__name__)
+pool = urllib3.PoolManager()
 
 # hardcodeamos este valor por ahora
 xsdpath = os.path.dirname(os.path.realpath(__file__)).replace(
@@ -67,6 +95,8 @@ class invoice(models.Model):
         Función para guardar como referencia la nota de pedido en el picking
         @author: Daniel Blanco daniel[at]blancomartin.cl
         @version: 2016-09-29
+        @version: 2016-11-12 los cambios son que puede referir automáticamente
+        a un picking o guia de despacho.
         :return:
         """
         # other model option='stock.picking.reference'
@@ -86,12 +116,32 @@ class invoice(models.Model):
                     'reference_date': order_id[0].date_confirm,
                     'prefix': sii_ref.doc_code_prefix,
                     'reason': 'Venta Confirmada'}
-                    # codref no aplica para este caso, solo notas de crédito/debito
+                    # codref no aplica para este caso, solo notas de
+                    # crédito/debito
             _logger.info('grabando la referencia: {}'.format(vals))
             ref_obj.create(vals)
         except:
             pass
             _logger.info('No existe referencia automática a nota de pedido')
+        picking_obj = self.env['stock.picking']
+        picking_id = picking_obj.search([('name', '=', inv.origin)])
+        for picking_voucher in picking_id.voucher_ids:
+            try:
+                vals = {
+                    'invoice_id': inv.id,
+                    'parent_type': model,
+                    'name': int(
+                        re.sub('[^1234567890]', '', picking_voucher.number,)),
+                    'sii_document_class_id': picking_voucher.book_id.sii_document_class_id,
+                    'reference_date': picking_voucher.book_id.sii_document_class_id,
+                    'prefix': picking_voucher.book_id.sii_document_class_id.doc_code_prefix,
+                    'reason': 'Mercadería enviada'}
+                _logger.info('grabando la referencia: {}'.format(vals))
+                ref_obj.create(vals)
+            except:
+                pass
+                _logger.info(
+                    'No existe referencia automática a guias de despacho')
 
     def clean_relationships(self, model='invoice.reference'):
         """
@@ -226,6 +276,8 @@ class invoice(models.Model):
         headers['Authorization'] = 'Basic {}'.format(
             base64.b64encode('{}:{}'.format(
                 dte_password, dte_username)))
+        # control del header
+        # raise UserError(headers['Authorization'])
         headers['Accept-Encoding'] = 'gzip, deflate, identity'
         headers['Accept'] = '*/*'
         headers['User-Agent'] = 'python-requests/2.6.0 CPython/2.7.6 \
@@ -512,19 +564,16 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         string='Batch Number',
         readonly=True,
         help='Batch number for processing multiple invoices together')
-
     sii_barcode = fields.Char(
         copy=False,
         string=_('SII Barcode'),
         readonly=True,
         help='SII Barcode Name')
-
     sii_barcode_img = fields.Binary(
         copy=False,
         string=_('SII Barcode Image'),
         readonly=True,
         help='SII Barcode Image in PDF417 format')
-
     sii_message = fields.Text(
         string='SII Message',
         readonly=True,
@@ -561,7 +610,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         copy=False,
         help="SII request result",
         default = '')
-
     dte_service_provider = fields.Selection(
         (
             ('', 'None'),
@@ -709,7 +757,8 @@ stamp to be legally valid.''')
         Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-23
-        Se corrige función para que no cree un nuevo PDF cada vez que se hace clic en botón
+        Se corrige función para que no cree un nuevo PDF cada vez que se hace
+        clic en botón
         y no tome PDF con cedible que se creará en botón imprimir.
         @review: Juan Plaza (jplaza@isos.cl)
         @version: 2016-09-28
@@ -741,9 +790,11 @@ stamp to be legally valid.''')
             attachment_obj = self.env['ir.attachment']
             attachment_id = attachment_obj.create(
                 {
-                    'name': 'DTE_' + self.sii_document_class_id.name + '-' + self.sii_document_number + '.pdf',
+                    'name': 'DTE_' + self.sii_document_class_id.name + \
+                            '-' + self.sii_document_number + '.pdf',
                     'datas': invoice_pdf,
-                    'datas_fname': 'DTE_' + self.sii_document_class_id.name + '-' + self.sii_document_number + '.pdf',
+                    'datas_fname': 'DTE_' + self.sii_document_class_id.name + \
+                                   '-' + self.sii_document_number + '.pdf',
                     'res_model': self._name,
                     'res_id': self.id,
                     'type': 'binary'})
@@ -876,6 +927,7 @@ filename_field=name&id=%s' % (new_attach.id,),
 
     @api.multi
     def action_number(self):
+        self.button_reset_taxes()
         self.do_dte_send_invoice()
         res = super(invoice, self).action_number()
         return res
@@ -883,6 +935,7 @@ filename_field=name&id=%s' % (new_attach.id,),
     @api.multi
     def do_dte_send_invoice(self):
         cant_doc_batch = 0
+        sii_code = 0
         for inv in self.with_context(lang='es_CL'):
             if inv.type[:2] == 'in':
                 continue
@@ -918,6 +971,17 @@ filename_field=name&id=%s' % (new_attach.id,),
             ind_exe_qty = 0
             sum_lines = 0
             MntExe = 0
+            # journal_document_class_id manda
+
+            inv.sii_document_class_id = inv.journal_document_class_id.sii_document_class_id
+            _logger.info('doc class id: {} . sii doc class id: {}, sii_code:. {}'.format(
+                inv.sii_document_class_id,
+                inv.journal_document_class_id.sii_document_class_id,
+                inv.journal_document_class_id.sii_document_class_id.sii_code))
+            sii_code = inv.sii_document_class_id.sii_code
+            # corrige un problema de
+            # dcsii_id = self.env['sii.document_class'].search([('sii_code', '=', sii_code)], limit=1)
+            # raise UserError(sii_code)
             for line in inv.invoice_line:
                 # se hizo de esta manera para que no dé error
                 try:
@@ -939,25 +1003,31 @@ filename_field=name&id=%s' % (new_attach.id,),
                     lines['CdgItem']['TpoCodigo'] = 'INT1'
                     lines['CdgItem']['VlrCodigo'] = line.product_id.default_code
                 # todo: mejorar el cálculo de impuestos
-
-                if self.product_is_exempt(line):
+                if self.product_is_exempt(line) and sii_code != 61:
                     # manejo de error: momentaneamente para simplificar los
                     # cálculos de impuestos, se impide colocar items exentos
                     # en una factura afecta
-                    if inv.sii_document_class_id.sii_code == 33:
+                    if sii_code != 34:
                         raise UserError('''Esta implementación no permite \
 facturar items exentos en facturas afectas. Cambie el tipo de documento \
 o elimine el producto exento de esta factura.
 Producto que provocó el problema: {}'''.format(line.product_id.name))
                     lines['IndExe'] = 1
                     ind_exe_qty += 1
-                    MntExe +=int(round(line.price_subtotal, 0))
-
+                    MntExe += int(round(line.price_subtotal, 0))
+                else:
+                    if sii_code == 34:
+                        raise UserError('''{} - El producto seleccionado no es \
+exento. Deberá utilizar documento diferente a factura exenta para registrar \
+la venta, o cambiar el tipo de documento de forma acorde. Producto que \
+provocó el problema: {}'''.format(sii_code, line.product_id.name))
+                # continua si está todo bien
                 lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
                 lines['DscItem'] = line.name
-                # si es cero y es nota de crédito o debito, los salteo a los dos
+                # si es cero y es nota de crédito o debito, los salteo a
+                # los dos
                 if line.quantity == 0 and line.price_unit == 0 and \
-                                inv.sii_document_class_id.sii_code in [61, 56]:
+                                sii_code in [61, 56]:
                     pass
                 else:
                     lines['QtyItem'] = round(line.quantity, 4)
@@ -986,10 +1056,9 @@ Producto que provocó el problema: {}'''.format(line.product_id.name))
                     invoice_lines.extend([{'Detalle': lines}])
                 else:
                     invoice_lines.extend([lines])
-            if len(invoice_lines) == ind_exe_qty \
-                    and inv.sii_document_class_id.sii_code not in [34, 61]:
+            if len(invoice_lines) == ind_exe_qty and sii_code not in [34, 61]:
                 raise UserError(_('All items are VAT exempt. Type of document \
-is {} does not match'.format(inv.sii_document_class_id.sii_code)))
+is {} does not match'.format(sii_code)))
             ref_lines = []
             if len(inv.ref_document_ids) > 0:
                 _logger.info(inv.ref_document_ids)
@@ -1027,7 +1096,7 @@ is {} does not match'.format(inv.sii_document_class_id.sii_code)))
             dte['Encabezado'] = collections.OrderedDict()
             dte['Encabezado']['IdDoc'] = collections.OrderedDict()
             dte['Encabezado']['IdDoc'][
-                'TipoDTE'] = inv.sii_document_class_id.sii_code
+                'TipoDTE'] = sii_code
             dte['Encabezado']['IdDoc']['Folio'] = folio
             dte['Encabezado']['IdDoc']['FchEmis'] = inv.date_invoice
             # todo: forma de pago y fecha de vencimiento - opcional
@@ -1055,6 +1124,14 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Emisor']['Telefono'] = inv.company_id.phone or ''
             dte['Encabezado']['Emisor'][
                 'CorreoEmisor'] = inv.company_id.dte_email
+            # se quitan los actecos.. antes se ponía todos, pero no es claro
+            # en la http://www.sii.cl/factura_electronica/formato_dte.pdf
+            # porque dice que el maximo son 4 pero se acepta uno solo
+            # (al final, que quiere decir?? que se pueden 4 o que se puede 1??)
+            # ver pagina 14 item 34 - por las dudas dejo solo el que corresponde
+            # al name seleccionado.
+            dte['Encabezado']['Emisor']['Acteco'] = inv.char_replace(
+                inv.turn_issuer.code)
             # dte['Encabezado']['Emisor']['item'] = giros_emisor
             #  giros de la compañia - codigos
             # todo: <CdgSIISucur>077063816</CdgSIISucur> codigo de sucursal
@@ -1067,6 +1144,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 inv.company_id.state_id.name)
             dte['Encabezado']['Emisor']['CiudadOrigen'] = self.char_replace(
                 inv.company_id.city)
+            try:
+                dte['Encabezado']['Emisor']['CdgVendedor'] = inv.char_replace(
+                    inv.partner_id.user_id.name or 'Sin Vendedor')
+            except:
+                _logger.info('no se pudo leer el nombre del vendedor')
             dte['Encabezado']['Receptor'] = collections.OrderedDict()
             # agregado de posibilidad de multiples direcciones, para el mismo
             # partner si el registro es "hijo de" un partner principal,
@@ -1079,6 +1161,10 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     inv.partner_id.vat)
                 dte['Encabezado']['Receptor'][
                     'RznSocRecep'] = inv.partner_id.name
+                if not inv.invoice_turn.name:
+                    raise UserError(_('There is no customer turn selected.'))
+                dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
+                    inv.invoice_turn.name)[:40]
             else:
                 # si viene por aca significa que estoy en un partner "hijo"
                 # y debo tomar la razon social principal
@@ -1086,10 +1172,18 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     inv.partner_id.parent_id.vat)
                 dte['Encabezado']['Receptor'][
                     'RznSocRecep'] = inv.partner_id.parent_id.name
-            if not inv.invoice_turn.name:
-                raise UserError(_('There is no customer turn selected.'))
-            dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
-                inv.invoice_turn.name)[:40]
+                if not inv.invoice_turn.name:
+                    raise UserError(_('There is no customer turn selected.'))
+                dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
+                    inv.invoice_turn.name)[:40]
+                try:
+                    dte['Encabezado']['Receptor']['Contacto'] = \
+                        self.char_replace('At: {} Tel: {}'.format(
+                            inv.partner_id.name or '',
+                            inv.partner_id.phone or ''))[:80]
+                except:
+                    _logger.info('No pudo leer información de contacto')
+                    pass
             dte['Encabezado']['Receptor']['DirRecep'] = self.char_replace(
                 inv.partner_id.street)
             # todo: revisar comuna: "false"
@@ -1103,9 +1197,10 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 inv.partner_id.city)
             dte['Encabezado']['Totales'] = collections.OrderedDict()
             #################################################
+            MntTotal = int(round(inv.amount_total, 0))
             if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
                 # (ficticio, para forzar envío)
-                if inv.sii_document_class_id.sii_code == 34:
+                if sii_code == 34:
                     # en el caso que haya un tipo 34, el monto
                     # exento va a coincidir con el total de la factura.
                     dte['Encabezado']['Totales']['MntExe'] = int(round(
@@ -1126,15 +1221,15 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                         # modificaciones
                         _logger.info('calculo de iva total por excepcion')
                         dte['Encabezado']['Totales']['TasaIVA'] = 19
-                    MntTotal = int(round(inv.amount_total, 0))
+
                     dte['Encabezado']['Totales']['IVA'] = MntTotal - dte[
                         'Encabezado']['Totales']['MntNeto']
-                    dte['Encabezado']['Totales']['MntTotal'] = MntTotal
+                dte['Encabezado']['Totales']['MntTotal'] = MntTotal
                 dte['item'] = invoice_lines
                 if len(ref_lines) > 0:
                     dte['item'].extend(ref_lines)
             else:
-                if inv.sii_document_class_id.sii_code == 34:
+                if sii_code == 34:
                     dte['Encabezado']['Totales']['MntExe'] = 0
                 # esto lo hace para libreDTE la construccion directa del valor
                 # en el diccionario. Porque en las otras opciones de XML
@@ -1153,7 +1248,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             _logger.info(dte)
             # raise UserError('punto de control')
             doc_id_number = "F{}T{}".format(
-                folio, inv.sii_document_class_id.sii_code)
+                folio, sii_code)
             doc_id = '<Documento ID="{}">'.format(doc_id_number)
             # TODO: si es sii, inserto el timbre
 

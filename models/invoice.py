@@ -1199,7 +1199,8 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             #     dte['Encabezado']['Emisor']['item'] = giros_emisor
             #     # giros de la compañia - codigos
             # else:
-            dte['Encabezado']['Emisor']['Telefono'] = inv.company_id.phone or ''
+            if inv.company_id.phone:
+                dte['Encabezado']['Emisor']['Telefono']
             dte['Encabezado']['Emisor'][
                 'CorreoEmisor'] = inv.company_id.dte_email
             # se quitan los actecos.. antes se ponía todos, pero no es claro

@@ -4,4 +4,5 @@
 # directory
 ##############################################################################
 from . import invoice, partner, company, payment_term, sii_regional_offices
+from . import account_invoice_additional
 

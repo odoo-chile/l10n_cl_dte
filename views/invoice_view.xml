@@ -18,11 +18,27 @@
             <field name="arch" type="xml">
                 <!-- TODO ver si es necesario cambiar este contexto o no -->
                 <!-- TODO cambiar color del boton de envio una vez enviado -->
+                <field name="fiscal_position" position="after">
+                    <field name="contact_data"
+                           attrs="{'readonly':[('sii_xml_request', '!=', False)]}"
+                    />
+                </field>
                 <field name="invoice_line" position="attributes">
                     <attribute name="context">{'partner_id': partner_id, 'price_type': context.get('price_type') or False, 'type': type}" name="invoice_line" on_change="onchange_invoice_line(invoice_line)</attribute>
                 </field>
+
  
                 <notebook>
+                    <page string="Additional Descriptions" name="additional_descriptions"
+                          attrs="{'invisible':[('dte_service_provider', 'not in', ['FACTURACION'])]}">
+                        <field name="additional_lejend_ids"
+                               attrs="{'readonly':[('sii_xml_request', '!=', False)]}"
+                               options="{'limit': 10, 'create': false, 'create_edit': false}">
+                            <tree string="Document References" editable="bottom">
+                                <field name="name"/>
+                            </tree>
+                        </field>
+                    </page>
                     <page string="Invoice References" name="invoice_references">
                         <field name="ref_document_ids"
                                options="{'limit': 10, 'create': false, 'create_edit': false}"

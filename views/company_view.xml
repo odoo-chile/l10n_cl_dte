@@ -18,6 +18,17 @@
                                password="True"
                                attrs="{'invisible': [('dte_service_provider', 'not in', ['EFACTURADELSUR', 'EFACTURADELSUR_TEST', 'LIBREDTE', 'LIBREDTE_TEST'])],
                                        'required':  [('dte_service_provider', 'in', ['EFACTURADELSUR', 'EFACTURADELSUR_TEST', 'LIBREDTE', 'LIBREDTE_TEST'])]}"/>
+                        <field name="dte_tributarias"
+                               attrs="{
+                                'invisible': [
+                                    ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST'])
+                                    ]}"/>
+
+                        <field name="dte_cedibles"
+                               attrs="{
+                                'invisible': [
+                                    ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST'])
+                                    ]}"/>
                         <field name="dte_resolution_number"
                                attrs="{'invisible': [('dte_service_provider', 'not in', ['SII', 'SIIHOMO'])],
                                        'required':  [('dte_service_provider', 'in', ['SII', 'SIIHOMO'])]}"/>

@@ -89,6 +89,57 @@ class Invoice(models.Model):
     """
     _inherit = "account.invoice"
 
+    def enviar_ldte(self, inv, headers, dte):
+        """
+        Función para enviar el dte a libreDTE
+        @author: Daniel Blanco
+        @version: 2016-10-03
+        :param headers:
+        :param dte:
+        :return:
+        """
+        if True:
+            response_emitir = pool.urlopen(
+                'POST', api_emitir, headers=headers, body=json.dumps(
+                    dte))
+            if response_emitir.status != 200:
+                raise UserError(
+                    'Error en conexión al emitir: {}, {}'.format(
+                        response_emitir.status, response_emitir.data))
+            _logger.info('response_emitir: {}'.format(
+                response_emitir.data))
+            try:
+                inv.sii_xml_response1 = response_emitir.data
+            except:
+                _logger.warning(
+                    'no pudo guardar la respuesta al ws de emision')
+            '''
+            {"emisor": ----, "receptor": -, "dte": --,
+             "codigo": "-----"}
+            '''
+            response_emitir_data = response_emitir.data
+        else:
+            _logger.info('Obteniendo XML de preemision existente...')
+            response_emitir_data = inv.sii_xml_response1
+        # raise UserError(inv)
+        response_j = self.bring_xml_ldte(inv, response_emitir_data)
+        self.set_folio(inv, response_j['folio'])
+        _logger.info('Este es el XML decodificado:')
+        _logger.info(base64.b64decode(response_j['xml']))
+        try:
+            inv.sii_xml_request = self.convert_encoding(
+                base64.b64decode(response_j['xml']))
+        except:
+            pass
+            _logger.warning(
+                'no pudo codificar y guardar el documento... ')
+        try:
+            self.bring_pdf_ldte()
+        except:
+            pass
+            _logger.warning('no pudo traer el pdf')
+        return response_j
+
     @staticmethod
     def char_replace(text):
         """
@@ -116,8 +167,8 @@ class Invoice(models.Model):
         @version: 2016-06-01
         """
         xml = '''<DTE xmlns="http://www.sii.cl/SiiDte" version="1.0">
-    <!-- Odoo Implementation Blanco Martin -->
-    {}</DTE>'''.format(doc)
+<!-- Odoo Implementation Blanco Martin -->
+{}</DTE>'''.format(doc)
         return xml
 
     @staticmethod
@@ -233,12 +284,12 @@ class Invoice(models.Model):
         picking_obj = self.env['stock.picking']
         picking_id = picking_obj.search([('name', '=', inv.origin)])
         sale_order = inv.origin
-        if picking_id[0]:
+        if picking_id:
             sale_order = picking_id[0].origin
             for picking_voucher in picking_id[0].voucher_ids:
                 # raise UserError(
                 # picking_voucher.book_id.sii_document_class_id.doc_code_prefix)
-                if True: #try:
+                try:
                     vals = {
                         'invoice_id': inv.id,
                         'parent_type': model,
@@ -255,7 +306,7 @@ class Invoice(models.Model):
                         'reason': 'Mercadería enviada'}
                     _logger.info('grabando la referencia: {}'.format(vals))
                     ref_obj.create(vals)
-                else: #except:
+                except:
                     pass
                     _logger.info(
                         'Automatic reference to stock voucher does not exist')
@@ -285,9 +336,9 @@ class Invoice(models.Model):
         @version: 2016-09-29
         :return:
         """
-        invoice_id = self.invoice_id
+        invoice_id = self.id
         ref_obj = self.env[model]
-        ref_obj.search([('invoice_id', '=', invoice_id.id)]).unlink()
+        ref_obj.search([('invoice_id', '=', invoice_id)]).unlink()
 
     def clean_xml(self):
         """
@@ -497,9 +548,9 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             host = 'https://www.efacturadelsur.cl'
             post = '/ws/DTE.asmx' # HTTP/1.1
             url = host + post
-            _logger.info('URL to be used %s' % url)
-            _logger.info('Lenght used for forming envelope: %s' % len(
-                self.sii_xml_request))
+            _logger.info('URL to be used {}'.format(url))
+            _logger.info('Lenght used for forming envelope: {}'.format(len(
+                self.sii_xml_request)))
             response = pool.urlopen('POST', url, headers={
                 'Content-Type': 'application/soap+xml',
                 'charset': 'utf-8',
@@ -509,10 +560,11 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             _logger.info(response.data)
             if response.status != 200:
                 raise UserError(
-                    'The Transmission Has Failed. Error: %s' % response.status)
+                    'The Transmission Has Failed. Error: {}'.format(
+                        response.status))
             setenvio = {
-                'sii_result': 'Enviado' \
-                    if self.dte_service_provider == 'EFACTURADELSUR' \
+                'sii_result': 'Enviado'
+                    if self.dte_service_provider == 'EFACTURADELSUR'
                     else self.sii_result,
                 'sii_xml_response1': response.data}
             self.write(setenvio)
@@ -536,9 +588,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         return {
             'type' : 'ir.actions.act_url',
             'url': '/web/binary/download_document?model=account.invoice\
-&field=sii_xml_request&id=%s&filename=demoxml.xml' % (self.id),
-            'target': 'self',
-        }
+&field=sii_xml_request&id=%s&filename=demoxml.xml'.format(self.id),
+            'target': 'self'}
 
     def get_company_dte_service_provider(self):
         """
@@ -630,25 +681,21 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         help="SII request result",
         default = '')
     dte_service_provider = fields.Selection(
-        (
-            ('', 'None'),
-            ('EFACTURADELSUR', 'efacturadelsur.cl'),
-            ('EFACTURADELSUR_TEST', 'efacturadelsur.cl (test mode)'),
-            ('ENTERNET', 'enternet.cl'),
-            ('FACTURACION', 'facturacion.cl'),
-            ('FACTURAENLINEA', 'facturaenlinea.cl'),
-            ('LIBREDTE', 'LibreDTE'),
-            ('LIBREDTE_TEST', 'LibreDTE (test mode)'),
-            ('SIIHOMO', 'SII - Certification process'),
-            ('SII', 'www.sii.cl'),
-            ('SII MiPyme', 'SII - Portal MiPyme'),
-        ), 'DTE Service Provider',
+        [('', 'None'),
+         ('EFACTURADELSUR', 'efacturadelsur.cl'),
+         ('EFACTURADELSUR_TEST', 'efacturadelsur.cl (test mode)'),
+         ('ENTERNET', 'enternet.cl'),
+         ('FACTURACION', 'facturacion.cl'),
+         ('FACTURAENLINEA', 'facturaenlinea.cl'),
+         ('LIBREDTE', 'LibreDTE'),
+         ('LIBREDTE_TEST', 'LibreDTE (test mode)'),
+         ('SIIHOMO', 'SII - Certification process'),
+         ('SII', 'www.sii.cl'),
+         ('SII MiPyme', 'SII - Portal MiPyme'),
+         ], 'DTE Service Provider',
         related='company_id.dte_service_provider',
         readonly=True)
-
-    # estas referencias existen de la versión anterior (8.0.1.3)
-    # ToDO: quitarlas para que se reemplacen totalmente por campos
-    # referenciales
+    contact_data = fields.Char('Contact Data')
     '''
     a partir del cambio, estos campos quedarían obsoletos.
     Los dejamos, para mantener compatibilidad de información
@@ -671,6 +718,9 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                                         help='''This value must be provided \
 and must appear in your pdf or printed tribute document, under the electronic \
 stamp to be legally valid.''')
+    additional_lejend_ids = fields.One2many(
+        'account.invoice.additional', 'invoice_id',
+        string='Document Additional Lejends')
 
     # third_party_xml = fields.Binary('XML File', copy=False)
     filename_xml = fields.Char('File Name XML')
@@ -687,25 +737,24 @@ stamp to be legally valid.''')
                 ['draft', 'proforma', 'proforma2', 'cancel'])])
         return rel_invoices
 
-
     @api.multi
-    def bring_xml_ldte(self, response_emitir_data):
+    def bring_xml_ldte(self, inv, response_emitir_data):
         """
         Función para tomar el XML generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-23
         """
-        self.ensure_one()
+        # self.ensure_one()
         _logger.info('entrada a bringxml function')
         headers = self.create_headers_ldte()
         response_generar = pool.urlopen(
             'POST', api_generar, headers=headers,
             body=response_emitir_data)
         if response_generar.status != 200:
-            raise UserError('Error en conexión al generar: %s, %s' % (
+            raise UserError('Error en conexión al generar: {}, {}'.format(
                 response_generar.status, response_generar.data))
-        _logger.info('response_generar: %s' % response_generar.data)
-        self.sii_xml_response1 = response_emitir_data
+        _logger.info('response_generar: {}'.format(response_generar.data))
+        inv.sii_xml_response1 = response_emitir_data
         try:
             response_j = json.loads(response_generar.data)
         except:
@@ -723,17 +772,17 @@ stamp to be legally valid.''')
 
         attachment_obj = self.env['ir.attachment']
         _logger.info('Attachment')
-        _logger.info(self.sii_document_class_id.name)
+        _logger.info(inv.sii_document_class_id.name)
         _logger.info(response_j['folio'])
         attachment_id = attachment_obj.create(
             {
-                'name': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                'name': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
                     response_j['folio'])+'.xml',
                 'datas': response_j['xml'],
-                'datas_fname': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                'datas_fname': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
                     response_j['folio'])+'.xml',
-                'res_model': self._name,
-                'res_id': self.id,
+                'res_model': inv._name,
+                'res_id': inv.id,
                 'type': 'binary'
             })
         _logger.info('Se ha generado factura en XML con el id {}'.format(
@@ -803,16 +852,16 @@ stamp to be legally valid.''')
                 'POST', api_gen_pdf, headers=headers,
                 body=generar_pdf_request)
             if response_pdf.status != 200:
-                raise Warning('Error en conexión al generar: %s, %s' % (
+                raise UserError('Error en conexión al generar: {}, {}'.format(
                     response_pdf.status, response_pdf.data))
             invoice_pdf = base64.b64encode(response_pdf.data)
             attachment_obj = self.env['ir.attachment']
             attachment_id = attachment_obj.create(
                 {
-                    'name': 'DTE_' + self.sii_document_class_id.name + \
+                    'name': 'DTE_' + self.sii_document_class_id.name +
                             '-' + self.sii_document_number + '.pdf',
                     'datas': invoice_pdf,
-                    'datas_fname': 'DTE_' + self.sii_document_class_id.name + \
+                    'datas_fname': 'DTE_' + self.sii_document_class_id.name +
                                    '-' + self.sii_document_number + '.pdf',
                     'res_model': self._name,
                     'res_id': self.id,
@@ -885,38 +934,38 @@ at a time.')
 
     @api.multi
     def invoice_print(self):
-        '''
+        """
         Funcion que reemplaza función de botón imprimir para generar PDF
         con cedible, función solo para LibreDTE.
         TODO: poner comprobación de existencia de PDF al principio
         autor: Juan Plaza - jplaza@isos.cl basado en función de Daniel Blanco
         @version: 2016-09-28
         log: Daniel Blanco: modificada para mejorar sintaxis (lint)
-        '''
+        """
+        dte_tributarias = self.company_id.dte_tributarias \
+            if self.company_id.dte_tributarias else 1
+        dte_cedibles = self.company_id.dte_cedibles \
+            if self.company_id.dte_cedibles else 0
         _logger.info('entrando a impresion de factura desde boton de arriba')
         self.ensure_one()
         _logger.info('entrada a invoice print function')
         headers = self.create_headers_ldte()
-        # en lugar de third_party_xml, que ahora no va a existir más,
-        # hay que tomar el xml del adjunto, o bien del texto
-        # pero prefiero del adjunto
         dte_xml = self.get_xml_attachment()
         genera_pdf_request = json.dumps(
             {'xml': dte_xml,
-             'cedible': 1,
-             'copias_tributarias': 1,
-             'copias_cedibles': 1,
+             'cedible': 1 if dte_cedibles > 0 else 0,
+             'copias_tributarias': dte_tributarias,
+             'copias_cedibles': dte_cedibles,
              'compress': False})
         _logger.info(genera_pdf_request)
         response_pdf = pool.urlopen(
             'POST', api_gen_pdf, headers=headers,
             body=genera_pdf_request)
         if response_pdf.status != 200:
-            raise Warning('Error en conexión al bkgenerar: %s, %s' % (
-                response_pdf.status, response_pdf.data))
+            raise UserError(_(
+                'Connection error when generating: {}, {}'.format(
+                    response_pdf.status, response_pdf.data)))
         invoice_pdf = base64.b64encode(response_pdf.data)
-        # assert len(self) == 1, self.sent = True
-        # return self.env['report'].get_action(self, 'account.report_invoice')
         attachment_obj = self.env['ir.attachment']
         if attachment_obj.search(
                 [('res_model', '=', self._name),
@@ -924,7 +973,6 @@ at a time.')
             new_attach = attachment_obj.search(
                 [('res_model', '=', self._name), ('res_id', '=', self.id),
                  ('name', 'like', 'cedible')])
-
         else:
             new_attach = attachment_obj.create(
                 {
@@ -937,12 +985,10 @@ at a time.')
                     'res_model': self._name,
                     'res_id': self.id,
                     'type': 'binary'})
-
         return {
             'type': 'ir.actions.act_url',
             'url': '/web/binary/saveas?model=ir.attachment&field=datas&\
-filename_field=name&id=%s' % (new_attach.id,),
-            'target': 'self'}
+filename_field=name&id={}'.format(new_attach.id), 'target': 'self'}
 
     @api.multi
     def action_number(self):
@@ -959,8 +1005,10 @@ filename_field=name&id=%s' % (new_attach.id,),
             if inv.type[:2] == 'in':
                 continue
             # control de DTE
-            # raise UserError(inv.sii_document_class_id.dte)
-            if not inv.sii_document_class_id.dte:
+            # raise UserError(inv.sii_document_class_id)
+            # raise UserError(
+            # inv.journal_document_class_id.sii_document_class_id.dte)
+            if not inv.journal_document_class_id.sii_document_class_id.dte:
                 continue
             # control de DTE
             cant_doc_batch += 1
@@ -1031,7 +1079,7 @@ sii_code:. {}'.format(
                     # cálculos de impuestos, se impide colocar items exentos
                     # en una factura afecta
                     if sii_code != 34:
-                        raise UserError('''Esta implementación no permite \
+                        raise UserError(u'''Esta implementación no permite \
 facturar items exentos en facturas afectas. Cambie el tipo de documento \
 o elimine el producto exento de esta factura.
 Producto que provocó el problema: {}'''.format(line.product_id.name))
@@ -1040,7 +1088,7 @@ Producto que provocó el problema: {}'''.format(line.product_id.name))
                     MntExe += int(round(line.price_subtotal, 0))
                 else:
                     if sii_code == 34:
-                        raise UserError('''{} - El producto seleccionado no es \
+                        raise UserError(u'''{} - El producto seleccionado no es \
 exento. Deberá utilizar documento diferente a factura exenta para registrar \
 la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
@@ -1083,6 +1131,8 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 raise UserError(_('All items are VAT exempt. Type of document \
 is {} does not match'.format(sii_code)))
             ref_lines = []
+            adi_ref = 1
+            adi_lines = []
             if len(inv.ref_document_ids) > 0:
                 _logger.info(inv.ref_document_ids)
                 # inserción del detalle en caso que corresponda
@@ -1105,6 +1155,15 @@ is {} does not match'.format(sii_code)))
                         ref_lines.extend([{'Referencia': referencias}])
                     else:
                         ref_lines.extend([referencias])
+            if inv.dte_service_provider in ['FACTURACION']:
+                # leyendas adicionales
+                if len(inv.additional_lejend_ids) > 0:
+                    for addi in inv.additional_lejend_ids:
+                        if addi.name:
+                            adi_line = {}
+                            adi_line['A{}'.format(adi_ref)] = addi.name
+                            adi_lines.extend([{'NodosA': adi_line}])
+                            adi_ref += 1
 
             ##### lugar de corte posible para revisar creacion de test:
             # _logger.info(invoice_lines)
@@ -1182,6 +1241,9 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     raise UserError(_('There is no customer turn selected.'))
                 dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
                     inv.invoice_turn.name)[:40]
+                if inv.contact_data:
+                    dte['Encabezado']['Receptor'][
+                        'Contacto'] = self.char_replace(inv.contact_data)
             else:
                 # si viene por aca significa que estoy en un partner "hijo"
                 # y debo tomar la razon social principal
@@ -1193,14 +1255,17 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     raise UserError(_('There is no customer turn selected.'))
                 dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
                     inv.invoice_turn.name)[:40]
-                try:
-                    dte['Encabezado']['Receptor']['Contacto'] = \
-                        self.char_replace('At: {} Tel: {}'.format(
-                            inv.partner_id.name or '',
-                            inv.partner_id.phone or ''))[:80]
-                except:
-                    _logger.info('No pudo leer información de contacto')
-                    pass
+                if inv.contact_data:
+                    dte['Encabezado']['Receptor'][
+                        'Contacto'] = self.char_replace(inv.contact_data)
+                else:
+                    try:
+                        dte['Encabezado']['Receptor']['Contacto'] = \
+                            self.char_replace('At: {} Tel: {}'.format(
+                                inv.partner_id.name or '',
+                                inv.partner_id.phone or ''))[:80]
+                    except:
+                        _logger.info('No pudo leer información de contacto')
             dte['Encabezado']['Receptor']['DirRecep'] = self.char_replace(
                 inv.partner_id.street)
             # todo: revisar comuna: "false"
@@ -1254,14 +1319,15 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['Detalle'] = invoice_lines
                 if len(ref_lines) > 0:
                     dte['Referencia'] = ref_lines
-            # aca estaba la referencia antes
             if global_discount != 0:
                 dte['DscRcgGlobal'] = collections.OrderedDict()
                 dte['DscRcgGlobal']['NroLinDR'] = 1
                 dte['DscRcgGlobal'][
                     'TpoMov'] = 'D' if global_discount < 0 else 'R'
-                dte['DscRcgGlobal']['TpoValor'] = '$'  # ''%'
+                dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
+            if len(adi_lines) > 0:
+                dte['item'].extend([{'Adicional': adi_lines}])
             _logger.info(dte)
             # raise UserError('punto de control')
             doc_id_number = "F{}T{}".format(
@@ -1272,7 +1338,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte1['Documento ID'] = dte
             xml = dicttoxml.dicttoxml(
                 dte1, root=False, attr_type=False).replace(
-                    '<item>','').replace('</item>','')
+                    '<item>', '').replace('</item>', '')
 
             root = etree.XML( xml )
 
@@ -1306,9 +1372,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                     inv.dte_service_provider)).lower())
             elif inv.dte_service_provider in [
                 'LIBREDTE', 'LIBREDTE_TEST']:
-                _logger.info('password: %s' % self.company_id.dte_password)
-                _logger.info('username: %s' % self.company_id.dte_username)
-
+                _logger.info('username: {}, password: {}'.format(
+                    self.company_id.dte_username, self.company_id.dte_password))
                 headers = self.create_headers_ldte()
                 _logger.info('Headers:')
                 _logger.info(headers)
@@ -1316,57 +1381,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 _logger.info(dte)
                 _logger.info('DTE enviado (json)')
                 _logger.info(json.dumps(dte))
-
                 # corte para debug
-                # raise UserError('dictionary generated')
-                # if inv.sii_xml_response1 == False or \
-                # inv.sii_xml_response1 == '':
-                # buscar una manera de forzar el reenvio.
-                # por ahora fuerza el reenvío desde el principio
-                if True:
-                    response_emitir = pool.urlopen(
-                        'POST', api_emitir, headers=headers, body=json.dumps(
-                            dte))
-
-                    if response_emitir.status != 200:
-                        raise UserError(
-                            'Error en conexión al emitir: {}, {}'.format(
-                                response_emitir.status, response_emitir.data))
-                    _logger.info('response_emitir: {}'.format(
-                        response_emitir.data))
-                    try:
-                        inv.sii_xml_response1 = response_emitir.data
-                    except:
-                        _logger.warning(
-                            'no pudo guardar la respuesta al ws de emision')
-                    '''
-                    {"emisor": ----, "receptor": -, "dte": --,
-                     "codigo": "-----"}
-                    '''
-                    response_emitir_data = response_emitir.data
-                else:
-                    _logger.info('Obteniendo XML de preemision existente...')
-                    response_emitir_data = inv.sii_xml_response1
-
-                response_j = self.bring_xml_ldte(response_emitir_data)
-                self.set_folio(inv, response_j['folio'])
-                _logger.info('Este es el XML decodificado:')
-                _logger.info(base64.b64decode(response_j['xml']))
-
-                try:
-                    inv.sii_xml_request = self.convert_encoding(
-                        base64.b64decode(response_j['xml']))
-                except:
-                    pass
-                    _logger.warning(
-                        'no pudo codificar y guardar el documento... ')
-
-                try:
-                    self.bring_pdf_ldte()
-                except:
-                    pass
-                    _logger.warning('no pudo traer el pdf')
-
+                response_j = self.enviar_ldte(inv, headers, dte)
                 inv.write(
                     {
                         #'third_party_xml': response_j['xml'],
@@ -1389,7 +1405,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
 
 class InvoiceReference(models.Model):
     _name = "invoice.reference"
-    '''
+    """
     C<NroLinRef> ordinal. No se incluye. Se debe calcular al crear el
     diccionario
     C<TpoDocRef> i.sii_document_class_id.sii_code
@@ -1400,7 +1416,7 @@ class InvoiceReference(models.Model):
     N<RUTOtr>    no implementado (por ahora)
     N<IdAdicOtr> no implementado (por ahora)
     N<IndGlobal> no se incluye
-    '''
+    """
     # Esta Factura
     invoice_id = fields.Many2one(
         'account.invoice', 'Invoice',

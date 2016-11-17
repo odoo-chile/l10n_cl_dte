@@ -24,6 +24,7 @@ import hashlib
 import cchardet
 import ssl
 from SOAPpy import SOAPProxy
+from xml.dom.minidom import parseString
 # from signxml import xmldsig, methods
 from signxml import *
 """
@@ -254,13 +255,14 @@ class Invoice(models.Model):
                 schema = etree.XMLSchema(file=xsd_file)
                 parser = objectify.makeparser(schema=schema)
                 objectify.fromstring(some_xml_string, parser)
-                _logger.info(_("The Document XML file validated correctly: \
-(%s)") % validation)
+                _logger.info(_(
+                    "The Document XML file validated correctly: {}".format(
+                        validation)))
                 return True
             except XMLSyntaxError as e:
                 _logger.info(
-                    _("The Document XML file has error: %s") % e.args)
-                raise UserError(_('XML Malformed Error %s') % e.args)
+                    _("The Document XML file has error: {}".format(e.args)))
+                raise UserError(_('XML Malformed Error {}'.format(e.args)))
         else:
             # manejo de otras acciones futuras
             pass
@@ -439,11 +441,11 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             self.sii_document_class_id.sii_code,
             folio)
 
-            _logger.info("envio: %s" % envio_check)
+            _logger.info("envio: {}".format(envio_check))
             host = 'https://www.efacturadelsur.cl'
             post = '/ws/DTE.asmx'  # HTTP/1.1
             url = host + post
-            _logger.info('URL to be used %s' % url)
+            _logger.info('URL to be used {}'.format(url))
             response = pool.urlopen('POST', url, headers={
                 'Content-Type': 'application/soap+xml',
                 'charset': 'utf-8',
@@ -454,7 +456,8 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             if response.status != 200:
                 pass
                 raise UserError(
-                    'The Transmission Has Failed. Error: %s' % response.status)
+                    'The Transmission Has Failed. Error: {}'.format(
+                        response.status))
 
             setenvio = {
                 # 'sii_result': 'Enviado' if self.dte_service_provider ==
@@ -588,7 +591,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         return {
             'type' : 'ir.actions.act_url',
             'url': '/web/binary/download_document?model=account.invoice\
-&field=sii_xml_request&id=%s&filename=demoxml.xml'.format(self.id),
+&field=sii_xml_request&id={}&filename=demoxml.xml'.format(self.id),
             'target': 'self'}
 
     def get_company_dte_service_provider(self):
@@ -1040,7 +1043,6 @@ filename_field=name&id={}'.format(new_attach.id), 'target': 'self'}
             sum_lines = 0
             MntExe = 0
             # journal_document_class_id manda
-
             inv.sii_document_class_id = \
                 inv.journal_document_class_id.sii_document_class_id
             _logger.info('doc class id: {} . sii doc class id: {}, \
@@ -1162,7 +1164,8 @@ is {} does not match'.format(sii_code)))
                         if addi.name:
                             adi_line = {}
                             adi_line['A{}'.format(adi_ref)] = addi.name
-                            adi_lines.extend([{'NodosA': adi_line}])
+                            # adi_lines.extend([{'NodosA': adi_line}])
+                            adi_lines.extend([adi_line])
                             adi_ref += 1
 
             ##### lugar de corte posible para revisar creacion de test:
@@ -1199,8 +1202,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             #     dte['Encabezado']['Emisor']['item'] = giros_emisor
             #     # giros de la compañia - codigos
             # else:
-            if inv.company_id.phone:
-                dte['Encabezado']['Emisor']['Telefono']
+            try:
+                if inv.company_id.phone:
+                    dte['Encabezado']['Emisor']['Telefono'] = inv.company_id.phone
+            except:
+                pass
             dte['Encabezado']['Emisor'][
                 'CorreoEmisor'] = inv.company_id.dte_email
             # se quitan los actecos.. antes se ponía todos, pero no es claro
@@ -1327,8 +1333,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     'TpoMov'] = 'D' if global_discount < 0 else 'R'
                 dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
-            if len(adi_lines) > 0:
-                dte['item'].extend([{'Adicional': adi_lines}])
             _logger.info(dte)
             # raise UserError('punto de control')
             doc_id_number = "F{}T{}".format(
@@ -1345,9 +1349,16 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(
 '<Documento_ID>', doc_id).replace('</Documento_ID>', '</Documento>')
-
+            if len(adi_lines) > 0:
+                item_function = lambda x: 'NodosA'
+                xml_pret = xml_pret[:-1] + parseString(dicttoxml.dicttoxml({
+                    'Adicional': adi_lines},
+                    root=False,
+                    attr_type=False,
+                    item_func=item_function)).toprettyxml().replace(
+                    '<?xml version="1.0" ?>', '')
+                # raise UserError(xml_pret)
             xml_pret = self.create_template_doc(xml_pret)
-
             if inv.dte_service_provider in [
                 'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
                 enviar = 'true' if self.dte_service_provider == \

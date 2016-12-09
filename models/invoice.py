@@ -1063,10 +1063,12 @@ sii_code:. {}'.format(
                         global_discount += int(round(line.price_subtotal, 0))
                         continue
                 except:
-                    if u'descuento' in line.product_id.name.lower():
+                    if u'descuento' in line.product_id.name.lower() \
+                            or u'discount' in line.product_id.name.lower():
                         global_discount += int(round(line.price_subtotal, 0))
                         continue
-                    else:# no existe el campo is_discount
+                    else:
+                        # no existe el campo is_discount
                         pass
                 sum_lines += line.price_subtotal
                 lines = collections.OrderedDict()

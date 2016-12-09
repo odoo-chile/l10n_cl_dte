@@ -1331,8 +1331,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['DscRcgGlobal']['NroLinDR'] = 1
                 dte['DscRcgGlobal'][
                     'TpoMov'] = 'D' if global_discount < 0 else 'R'
+                # dte['DscRcgGlobal']['GlosaDR'] =
                 dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
+                if sii_code = 33:
+                    dte['DscRcgGlobal']['IndExeDR'] = 1
             _logger.info(dte)
             # raise UserError('punto de control')
             doc_id_number = "F{}T{}".format(

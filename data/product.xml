@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+    <data>
+        <record id="cn_correct" model="product.template">
+          <field name="name">CORRIGE-NC</field>
+          <field name="type">service</field>
+          <field name="default_code">CORRIGE</field>
+          <field name="description">Este producto no debe ser eliminado.
+              Se utiliza para corregir texto en las Notas de Cŕedito</field>
+          <field name="lst_price">0</field>
+        </record>
+    </data>
+</openerp>

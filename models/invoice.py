@@ -682,7 +682,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         states={'draft': [('readonly', False)]},
         copy=False,
         help="SII request result",
-        default = '')
+        default='')
     dte_service_provider = fields.Selection(
         [('', 'None'),
          ('EFACTURADELSUR', 'efacturadelsur.cl'),

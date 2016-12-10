@@ -8,7 +8,7 @@
             <field name="description">Este producto no debe ser eliminado.
                 Se utiliza para corregir texto en las Notas de Cŕedito</field>
             <field name="lst_price">0</field>
-            <field name="category_id" ref="product.product_category_all"/>
+            <field name="categ_id" ref="product.product_category_all"/>
         </record>
     </data>
 </openerp>

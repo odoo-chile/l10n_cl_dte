@@ -506,8 +506,11 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 resultado_status = 'Aceptado'
             elif response_status_j['revision_estado'] == '-11':
                 raise UserError('Atención: Revisión en Proceso')
-            elif response_status_j['revision_estado'] in [
-                'RCH - DTE Rechazado', 'RFR - Rechazado por Error en Firma']:
+            elif response_status_j['revision_estado'] in \
+                    ['RCH - DTE Rechazado',
+                     'RFR - Rechazado por Error en Firma',
+                     'RSC - Rechazado por Error en Schema',
+                     'RCT - Rechazado por Error en Carátula']:
                 resultado_status = 'Rechazado'
             else:
                 resultado_status = self.sii_result
@@ -1471,8 +1474,7 @@ needed for credit notes and debit notes.")
         for i in self:
             if not i.sii_document_class_id.sii_code \
                     and i.sii_document_class_id.doc_code_prefix:
-                _logger.info(
-                'pasa por la funcion compute_ref: {}|{}|{}'.format(
+                _logger.info('pasa por la funcion compute_ref: {}|{}|{}'.format(
                     i.id, i.name, i.sii_document_class_id.doc_code_prefix))
                 i.prefix = i.sii_document_class_id.doc_code_prefix[:3]
             else:

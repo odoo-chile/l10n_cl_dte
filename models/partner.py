@@ -61,6 +61,8 @@ class dteEmail(models.Model):
     @api.onchange('document_number')
     def get_data_from_libre_dte(self):
         self.ensure_one()
+        if self.document_type_id != self.env.ref('l10n_cl_invoice.dt_RUT'):
+            return
         if self.document_number == False:
             return
         self.document_type_id = self.env.ref('l10n_cl_invoice.dt_RUT')

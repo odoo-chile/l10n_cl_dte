@@ -64,6 +64,7 @@ host = 'https://libredte.cl/api'
 api_emitir = host + '/dte/documentos/emitir'
 api_generar = host + '/dte/documentos/generar'
 api_gen_pdf = host + '/dte/documentos/generar_pdf'
+api_get_xml = host + '/dte/dte_emitidos/xml/{0}/{1}/{2}'
 api_upd_satus = host + '/dte/dte_emitidos/actualizar_estado/'
 no_product = False
 special_chars = [
@@ -526,7 +527,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 'resultado_status grabado: {}'.format(self.sii_result))
             _logger.info(response_status_j['revision_estado'])
 
-
     @api.multi
     def send_dte(self):
         """
@@ -674,10 +674,10 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         ('', 'n/a'),
         ('NoEnviado', 'No Enviado'),
         ('Enviado', 'Enviado'),
+        ('Proceso', 'Proceso'),
+        ('Reparo', 'Reparo'),
         ('Aceptado', 'Aceptado'),
         ('Rechazado', 'Rechazado'),
-        ('Reparo', 'Reparo'),
-        ('Proceso', 'Proceso'),
         ('Reenviar', 'Reenviar'),
         ('Anulado', 'Anulado')],
         'Resultado',
@@ -742,6 +742,46 @@ stamp to be legally valid.''')
             ('state', 'not in',
                 ['draft', 'proforma', 'proforma2', 'cancel'])])
         return rel_invoices
+
+    @api.multi
+    def bring_generated_xml_ldte(self, inv):
+        """
+        Función para traer el XML que ya fué generado anteriormente, y sobre
+        el cual existe un track id.
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-12-16
+        :param inv:
+        :return:
+        """
+        self.ensure_one()
+        sii_code = self.sii_document_class_id.sii_code
+        folio = int(self.sii_document_number)
+        emisor = self.format_vat(self.company_id.vat)
+        _logger.info('entrada a bring_generated_xml_ldte')
+        headers = self.create_headers_ldte()
+        response_xml = pool.urlopen(
+            'GET', api_get_xml.format(sii_code, folio, emisor), headers=headers)
+        if response_xml.status != 200:
+            raise UserError('Error: {}'.format(response_xml.data))
+        _logger.info('response_generar: {}'.format(response_xml.data))
+        self.sii_xml_request = base64.b64decode(response_xml.data)
+        attachment_obj = self.env['ir.attachment']
+        _logger.info('Attachment')
+        _logger.info(self.sii_document_class_id.name)
+        attachment_id = attachment_obj.create(
+            {
+                'name': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                    folio)+'.xml',
+                'datas': response_xml.data,
+                'datas_fname': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                    folio)+'.xml',
+                'res_model': self._name,
+                'res_id': self.id,
+                'type': 'binary'
+            })
+        _logger.info('Se ha generado factura en XML con el id {}'.format(
+            attachment_id))
+
 
     @api.multi
     def bring_xml_ldte(self, inv, response_emitir_data):
@@ -1009,6 +1049,14 @@ filename_field=name&id={}'.format(new_attach.id), 'target': 'self'}
         sii_code = 0
         for inv in self.with_context(lang='es_CL'):
             if inv.type[:2] == 'in':
+                continue
+            if inv.sii_send_ident:
+                _logger.info(
+                    'Track id existente. No se validará documento: {}'.format(
+                        inv.sii_send_ident))
+                if not inv.sii_xml_request:
+                    inv.sii_result = 'NoEnviado'
+
                 continue
             # control de DTE
             # raise UserError(inv.sii_document_class_id)

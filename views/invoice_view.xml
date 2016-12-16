@@ -71,17 +71,26 @@
                                         type="object" name="check_dte_status"
                                         class="oe_highlight"
                                         attrs="{'invisible':[
-                                            '|',('sii_result', 'not in', ['Enviado']),
+                                            '|',('sii_result', 'not in', ['Enviado', 'NoEnviado']),
                                             ('dte_service_provider', 'in', ['FACTURACION'])
                                         ]
                                     }"/>
+                                <button string="Bring XML DTE" type="object"
+                                        class="oe_highlight"
+                                        name="bring_generated_xml_ldte"
+                                        attrs="{'invisible':[
+                                            '|', '|', ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST']),
+                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado']),
+                                            ('sii_xml_request', '=', True)
+                                        ]}"/>
                                 <button string="Bring PDF DTE" type="object"
                                         class="oe_highlight"
                                         name="bring_pdf_ldte"
                                         attrs="{'invisible':[
-                                            ('sii_result', 'not in', ['Enviado','Aceptado'])
+                                            '|', '|', ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST']),
+                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado']),
+                                            ('sii_xml_request', '=', False)
                                         ]}"/>
-
                             </div>
                             <field name='sii_result' widget="statusbar"
                                    context="{
@@ -91,7 +100,7 @@
                         <group colspan="4">
                             <field name='dte_service_provider'/>
                             <field name='sii_send_ident'
-                                attrs="{'invisible':[('sii_result', 'in', ['','NoEnviado'])]}"/>
+                                attrs="{'invisible':[('sii_result', 'in', [''])]}"/>
                             <field name='sii_barcode_img' widget="image"
                                 attrs="{'invisible':['|',('sii_result', '=', ''), ('dte_service_provider', 'not in', ['SIIHOMO', 'SII'])]}"/>
                             <!--<field name='sii_message'

@@ -891,8 +891,16 @@ stamp to be legally valid.''')
             # hay que tomar el xml del adjunto, o bien del texto
             # pero prefiero del adjunto
             dte_xml = self.get_xml_attachment()
+            dte_tributarias = self.company_id.dte_tributarias \
+                if self.company_id.dte_tributarias else 1
+            dte_cedibles = self.company_id.dte_cedibles \
+                if self.company_id.dte_cedibles else 0
             generar_pdf_request = json.dumps(
-                {'xml': dte_xml, 'compress': False})
+                {'xml': dte_xml,
+                 'cedible': 1 if dte_cedibles > 0 else 0,
+                 'copias_tributarias': dte_tributarias,
+                 'copias_cedibles': dte_cedibles,
+                 'compress': False})
             _logger.info(generar_pdf_request)
             response_pdf = pool.urlopen(
                 'POST', api_gen_pdf, headers=headers,

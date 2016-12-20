@@ -77,7 +77,7 @@ class dteEmail(models.Model):
                 api_get_partner_data + str(rut), headers=headers)
 
             if response_status.status != 200:
-                raise Warning(
+                _logger.info(
                     'Error al obtener datos del contribuyente: {}'.format(
                         response_status.data))
             partner_values = json.loads(response_status.data)

@@ -61,8 +61,8 @@
 
                                 <button string="Download XML" type="object" name="get_xml_file"
                                     attrs="{'invisible':[
-                                        ('dte_service_provider', 'not in',
-                                        ['EFACTURADELSUR', 'EFACTURADELSUR_TEST', 'FACTURACION'])"/>
+                                        ('dte_service_provider', 'in', ['LIBREDTE', 'LIBREDTE_TEST'])
+                                        ], 'disabled':True}"/>
                                 <!-- este boton solo se usa para efactura del sur -->
                                 <button string="Send DTE" type="object" name="send_dte"
                                     class="oe_highlight"

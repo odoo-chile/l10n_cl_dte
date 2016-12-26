@@ -129,21 +129,25 @@ class Invoice(models.Model):
         _logger.info(response_j)
         self.set_folio(inv, response_j['folio'])
         _logger.info('set_folio:.....')
-        try:
+        if not inv.sii_xml_request:
+            # Mejorar esta parte del código ya que viene de cuando generar
+            # enviaba el xml
             inv.sii_xml_request = self.convert_encoding(
                 base64.b64decode(response_j['xml']))
+        else:
+            _logger.warning(u'El XML debería haber quedado almacenado. \
+se comprueba si existe...')
+        try:
             _logger.info('Este es el XML decodificado:')
-            _logger.info(response_j['xml'])
+            _logger.info(inv.sii_xml_request)
         except:
-            pass
-            _logger.warning(
-                'no pudo codificar y guardar el documento... ')
             raise UserError(u"""No se pudo obtener el XML desde LibreDTE. \
 Sin embargo, el documento puede haber sido emitido. Revise en LibreDTE si la \
 misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
 correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
 número, guarde la factura y reintente la validación para continuar.
 Le recomendamos no continuar facturando hasta realizar este proceso.""")
+            pass
         try:
             self.bring_pdf_ldte()
         except:
@@ -738,7 +742,7 @@ stamp to be legally valid.''')
         return rel_invoices
 
     @api.multi
-    def bring_generated_xml_ldte(self, inv):
+    def bring_generated_xml_ldte(self, folio=''):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -749,7 +753,8 @@ stamp to be legally valid.''')
         """
         self.ensure_one()
         sii_code = self.sii_document_class_id.sii_code
-        folio = int(self.sii_document_number)
+        if folio == '':
+            folio = int(self.sii_document_number)
         emisor = self.format_vat(self.company_id.vat)
         _logger.info('entrada a bring_generated_xml_ldte')
         headers = self.create_headers_ldte()
@@ -757,7 +762,8 @@ stamp to be legally valid.''')
             'GET', api_get_xml.format(sii_code, folio, emisor), headers=headers)
         if response_xml.status != 200:
             raise UserError('Error: {}'.format(response_xml.data))
-        _logger.info('response_generar: {}'.format(response_xml.data))
+        _logger.info('response_generar: {}'.format(
+            base64.b64decode(response_xml.data)))
         self.sii_xml_request = base64.b64decode(response_xml.data)
         attachment_obj = self.env['ir.attachment']
         _logger.info('Attachment')
@@ -802,31 +808,62 @@ stamp to be legally valid.''')
                 'Reintente en un instante. \n{}'.format(
                 response_generar.data))
         _logger.info(response_j)
-        '''
-        {"emisor":76085472,"dte":56,"folio":3,"certificacion":1,"tasa":19,
-        "fecha":"2016-07-02","sucursal_sii":null,"receptor":"00000001",
-        "exento":null,"neto":230000,"iva":43700,"total":273700,"usuario":1639,
-        {'emisor', 'dte', 'folio', 'certificacion', 'tasa', 'fecha',
-         'sucursal_sii', 'receptor', 'exento', 'neto', 'iva', 'total',
-         'usuario'}'''
-
-        attachment_obj = self.env['ir.attachment']
-        _logger.info('Attachment')
-        _logger.info(inv.sii_document_class_id.name)
-        _logger.info(response_j['folio'])
-        attachment_id = attachment_obj.create(
-            {
-                'name': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
-                    response_j['folio'])+'.xml',
-                'datas': response_j['xml'],
-                'datas_fname': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
-                    response_j['folio'])+'.xml',
-                'res_model': inv._name,
-                'res_id': inv.id,
-                'type': 'binary'
-            })
-        _logger.info('Se ha generado factura en XML con el id {}'.format(
-            attachment_id))
+        """
+        {
+            "emisor":76201224,
+            "dte":34,
+            "folio":21,
+            "certificacion":1,
+            "tasa":0,
+            "fecha":"2016-12-26",
+            "sucursal_sii":null,
+            "receptor":"00000001",
+            "exento":1330000,
+            "neto":null,
+            "iva":0,
+            "total":1330000,
+            "usuario":1639,
+        ######            "xml":false,
+            "track_id":46192846,
+            "revision_estado":null,
+            "revision_detalle":null,
+            "anulado":0,
+            "iva_fuera_plazo":0,
+            "cesion_xml":null,
+            "cesion_track_id":null
+        }
+        """
+        if not response_j['xml']:
+            # no trajo el xml: hay que traerlo
+            if True:
+                response_j['xml'] = self.bring_generated_xml_ldte(response_j['folio'])
+            else:
+                raise UserError('bring_gen: no pudo traer el xml')
+            '''
+            {"emisor":76085472,"dte":56,"folio":3,"certificacion":1,"tasa":19,
+            "fecha":"2016-07-02","sucursal_sii":null,"receptor":"00000001",
+            "exento":null,"neto":230000,"iva":43700,"total":273700,"usuario":1639,
+            {'emisor', 'dte', 'folio', 'certificacion', 'tasa', 'fecha',
+             'sucursal_sii', 'receptor', 'exento', 'neto', 'iva', 'total',
+             'usuario'}'''
+        else:
+            attachment_obj = self.env['ir.attachment']
+            _logger.info('Attachment')
+            _logger.info(inv.sii_document_class_id.name)
+            _logger.info(response_j['folio'])
+            attachment_id = attachment_obj.create(
+                {
+                    'name': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
+                        response_j['folio'])+'.xml',
+                    'datas': response_j['xml'],
+                    'datas_fname': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
+                        response_j['folio'])+'.xml',
+                    'res_model': inv._name,
+                    'res_id': inv.id,
+                    'type': 'binary'
+                })
+            _logger.info('Se ha generado factura en XML con el id {}'.format(
+                attachment_id))
         return response_j
 
     @api.multi

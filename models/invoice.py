@@ -125,16 +125,25 @@ class Invoice(models.Model):
             response_emitir_data = inv.sii_xml_response1
         # raise UserError(inv)
         response_j = self.bring_xml_ldte(inv, response_emitir_data)
+        _logger.info('response_j')
+        _logger.info(response_j)
         self.set_folio(inv, response_j['folio'])
-        _logger.info('Este es el XML decodificado:')
-        _logger.info(base64.b64decode(response_j['xml']))
+        _logger.info('set_folio:.....')
         try:
             inv.sii_xml_request = self.convert_encoding(
                 base64.b64decode(response_j['xml']))
+            _logger.info('Este es el XML decodificado:')
+            _logger.info(response_j['xml'])
         except:
             pass
             _logger.warning(
                 'no pudo codificar y guardar el documento... ')
+            raise UserError(u'No se pudo obtener el XML desde LibreDTE. \
+            Sin embargo, la factura puede haber sido emitida. Revise en LibreDTE si la \
+            misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
+            correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
+            número, guarde la factura y reintente la validación para continuar. \
+            Le recomendamos no continuar facturando hasta hacer este proceso.')
         try:
             self.bring_pdf_ldte()
         except:

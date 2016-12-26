@@ -139,7 +139,7 @@ class Invoice(models.Model):
             _logger.warning(
                 'no pudo codificar y guardar el documento... ')
             raise UserError(u"""No se pudo obtener el XML desde LibreDTE. \
-Sin embargo, la factura puede haber sido emitida. Revise en LibreDTE si la \
+Sin embargo, el documento puede haber sido emitido. Revise en LibreDTE si la \
 misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
 correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
 número, guarde la factura y reintente la validación para continuar.
@@ -711,21 +711,6 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         related='company_id.dte_service_provider',
         readonly=True)
     contact_data = fields.Char('Contact Data')
-    '''
-    a partir del cambio, estos campos quedarían obsoletos.
-    Los dejamos, para mantener compatibilidad de información
-    en instalaciones previas, y que no haya posibilidad de perdida
-    de datos ante un cleanup de la bdd.
-    --------------------------------------------------------------
-    '''
-    # sii_referencia_TpoDocRef = fields.Char('TpoDocRef')
-    # sii_referencia_FolioRef =  fields.Char('FolioRef')
-    # sii_referencia_FchRef = fields.Char('FchRef')
-    # sii_referencia_CodRef = fields.Char('CodRef')
-
-    # campos nuevos para incluir referencias relacionales
-    # (para no tener un limiteen la cantidad de referencias al documento)
-    # ver la nueva clase que se agrega (referencias)
     ref_document_ids = fields.One2many(
         'invoice.reference', 'invoice_id', string='Document References')
 

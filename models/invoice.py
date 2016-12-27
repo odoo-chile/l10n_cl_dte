@@ -521,7 +521,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                     ['RLV - DTE Aceptado con Reparos Leves']:
                 resultado_status = 'Reparo'
             elif response_status_j['revision_estado'][:3] in \
-                    ['EPR', 'SOK', 'CRT', 'PDR', 'FOK', '-11']:
+                    ['SOK', 'CRT', 'PDR', 'FOK', '-11']:
                 resultado_status = 'Proceso'
                 _logger.info('Atención: Revisión en Proceso')
             elif response_status_j['revision_estado'] in \
@@ -745,7 +745,7 @@ stamp to be legally valid.''')
         return rel_invoices
 
     @api.multi
-    def bring_generated_xml_ldte(self):
+    def bring_generated_xml_ldte(self, foliop=0):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -756,7 +756,9 @@ stamp to be legally valid.''')
         """
         self.ensure_one()
         sii_code = self.sii_document_class_id.sii_code
-        folio = int(self.sii_document_number)
+        folio = self.get_folio_current()
+        if not folio:
+            folio = foliop
         emisor = self.format_vat(self.company_id.vat)
         _logger.info('entrada a bring_generated_xml_ldte. Folio: {}'.format(
             folio))
@@ -812,8 +814,8 @@ stamp to be legally valid.''')
             raise UserError('LibreDTE No pudo generar el XML.\n'
                 'Reintente en un instante. \n{}'.format(
                 response_generar.data))
-        _logger.info('response_j................')
-        _logger.info(response_j)
+        _logger.info('response_j..folio..............')
+        _logger.info(response_j['folio'])
         """
         {
             "emisor":76201224,
@@ -842,7 +844,14 @@ stamp to be legally valid.''')
         if not response_j['xml']:
             # no trajo el xml: hay que traerlo
             if True:
-                response_j['xml'] = self.bring_generated_xml_ldte()
+                try:
+                    response_j['xml'] = self.bring_generated_xml_ldte(
+                        int(response_j['folio']))
+                except:
+                    raise UserError(
+                        'No se pudo recibir el XML de la factura. Sin embargo, \
+este puede haber sido generado en LibreDTE. coloque el folio en el campo \
+TRACKID antes de revalidar, reintente la validación.')
             else:
                 raise UserError('bring_gen: no pudo traer el xml')
             '''

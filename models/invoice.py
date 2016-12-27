@@ -518,8 +518,10 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 'DTE aceptado', 'RLV - DTE Aceptado con Reparos Leves'] or \
                 response_status_j['revision_detalle'] == 'DTE aceptado':
                 resultado_status = 'Aceptado'
-            elif response_status_j['revision_estado'] == '-11':
-                raise UserError('Atención: Revisión en Proceso')
+            elif response_status_j['revision_estado'][:3] in \
+                    ['EPR', 'SOK', 'CRT', 'PDR', 'FOK', '-11']:
+                resultado_status = 'Proceso'
+                _logger.info('Atención: Revisión en Proceso')
             elif response_status_j['revision_estado'] in \
                     ['RCH - DTE Rechazado',
                      'RFR - Rechazado por Error en Firma',
@@ -756,8 +758,11 @@ stamp to be legally valid.''')
         if folio == '':
             folio = int(self.sii_document_number)
         emisor = self.format_vat(self.company_id.vat)
-        _logger.info('entrada a bring_generated_xml_ldte')
+        _logger.info('entrada a bring_generated_xml_ldte. Folio: {}'.format(
+            folio))
         headers = self.create_headers_ldte()
+        _logger.info('headers: {}'.format(headers))
+        _logger.info(api_get_xml.format(sii_code, folio, emisor))
         response_xml = pool.urlopen(
             'GET', api_get_xml.format(sii_code, folio, emisor), headers=headers)
         if response_xml.status != 200:

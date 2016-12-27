@@ -83,7 +83,7 @@
                                         name="bring_generated_xml_ldte"
                                         attrs="{'invisible':[
                                             '|', '|', ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST']),
-                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado']),
+                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado', 'Reparo']),
                                             ('sii_xml_request', '=', True)
                                         ]}"/>
                                 <button string="Bring PDF DTE" type="object"
@@ -91,7 +91,7 @@
                                         name="bring_pdf_ldte"
                                         attrs="{'invisible':[
                                             '|', '|', ('dte_service_provider', 'not in', ['LIBREDTE', 'LIBREDTE_TEST']),
-                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado']),
+                                            ('sii_result', 'not in', ['NoEnviado', 'Aceptado', 'Reparo']),
                                             ('sii_xml_request', '=', False)
                                         ]}"/>
                             </div>

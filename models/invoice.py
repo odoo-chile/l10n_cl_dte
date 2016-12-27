@@ -262,8 +262,7 @@ Le recomendamos no continuar facturando hasta realizar este proceso.""")
             validation_type = {
                 'doc': 'DTE_v10.xsd',
                 'env': 'EnvioDTE_v10.xsd',
-                'sig': 'xmldsignature_v10.xsd'
-            }
+                'sig': 'xmldsignature_v10.xsd'}
             xsd_file = xsdpath + validation_type[validation]
             try:
                 schema = etree.XMLSchema(file=xsd_file)
@@ -515,9 +514,12 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             _logger.info(response_status_j['revision_estado'])
             _logger.info(response_status_j['revision_detalle'])
             if response_status_j['revision_estado'] in [
-                'DTE aceptado', 'RLV - DTE Aceptado con Reparos Leves'] or \
-                response_status_j['revision_detalle'] == 'DTE aceptado':
+                'DTE aceptado'] or \
+                    response_status_j['revision_detalle'] == 'DTE aceptado':
                 resultado_status = 'Aceptado'
+            elif response_status_j['revision_estado'] in \
+                    ['RLV - DTE Aceptado con Reparos Leves']:
+                resultado_status = 'Reparo'
             elif response_status_j['revision_estado'][:3] in \
                     ['EPR', 'SOK', 'CRT', 'PDR', 'FOK', '-11']:
                 resultado_status = 'Proceso'
@@ -535,8 +537,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             setenvio = {
                 'sii_xml_response2': response_status.data,
                 'sii_result': resultado_status,
-                'invoice_printed': 'printed'
-            }
+                'invoice_printed': 'printed'}
             self.write(setenvio)
             _logger.info(
                 'resultado_status grabado: {}'.format(self.sii_result))
@@ -744,7 +745,7 @@ stamp to be legally valid.''')
         return rel_invoices
 
     @api.multi
-    def bring_generated_xml_ldte(self, folio=''):
+    def bring_generated_xml_ldte(self):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -755,8 +756,7 @@ stamp to be legally valid.''')
         """
         self.ensure_one()
         sii_code = self.sii_document_class_id.sii_code
-        if folio == '':
-            folio = int(self.sii_document_number)
+        folio = int(self.sii_document_number)
         emisor = self.format_vat(self.company_id.vat)
         _logger.info('entrada a bring_generated_xml_ldte. Folio: {}'.format(
             folio))
@@ -812,6 +812,7 @@ stamp to be legally valid.''')
             raise UserError('LibreDTE No pudo generar el XML.\n'
                 'Reintente en un instante. \n{}'.format(
                 response_generar.data))
+        _logger.info('response_j................')
         _logger.info(response_j)
         """
         {

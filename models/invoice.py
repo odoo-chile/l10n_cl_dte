@@ -842,7 +842,7 @@ stamp to be legally valid.''')
         if not response_j['xml']:
             # no trajo el xml: hay que traerlo
             if True:
-                response_j['xml'] = self.bring_generated_xml_ldte(response_j['folio'])
+                response_j['xml'] = self.bring_generated_xml_ldte()
             else:
                 raise UserError('bring_gen: no pudo traer el xml')
             '''

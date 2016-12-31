@@ -91,6 +91,24 @@ class Invoice(models.Model):
     """
     _inherit = "account.invoice"
 
+    def _calc_discount_vat(self, discount, sii_code):
+        """
+        Función provisoria para calcular el descuento:
+        TODO
+        @author: Daniel Blanco
+        @version: 2016-12-30
+        :param headers:
+        :param dte:
+        :return:
+        """
+        if sii_code in [61, 56]:
+            raise UserError(
+                u"""En esta implementación, no pueden usarse descuentos \
+globales en notas de crédito""")
+        elif sii_code in [33]:
+            discount = discount * 1.19
+        return discount
+
     def enviar_ldte(self, inv, headers, dte):
         """
         Función para enviar el dte a libreDTE
@@ -1164,13 +1182,16 @@ sii_code:. {}'.format(
                 # se hizo de esta manera para que no dé error
                 try:
                     if line.product_id.is_discount:
-                        # es un producto usado para representar descuentoe
                         global_discount += int(round(line.price_subtotal, 0))
+                        global_discount = self._calc_discount_vat(
+                            global_discount, sii_code)
                         continue
                 except:
                     if u'descuento' in line.product_id.name.lower() \
                             or u'discount' in line.product_id.name.lower():
                         global_discount += int(round(line.price_subtotal, 0))
+                        global_discount = self._calc_discount_vat(
+                            global_discount, sii_code)
                         continue
                     else:
                         # no existe el campo is_discount
@@ -1224,7 +1245,7 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                     if line.discount != 0:
                         lines['DescuentoPct'] = round(line.discount, 2)
                         lines['DescuentoMonto'] = int(
-                            round((line.quantity * price_unit * line.discount) \
+                            round((line.quantity * price_unit * line.discount)
                                   / 100, 0))
                 else:
                     #except:

@@ -1224,21 +1224,21 @@ la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 # continua si está todo bien
                 lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
-                lines['DscItem'] = line.name
+                # lines['DscItem'] = line.name
                 # si es cero y es nota de crédito o debito, los salteo a
                 # los dos
                 if line.quantity == 0 and line.price_unit == 0 and \
                                 sii_code in [61, 56]:
                     pass
                 else:
-                    lines['QtyItem'] = round(line.quantity, 4)
+                    lines['QtyItem'] = round(line.quantity, 2)
                     # todo: opcional lines['UnmdItem'] = line.uos_id.name[:4]
                     # reemplazo la formula de precio unitario para que sea
                     # independiente de si se incluye o no el iva en el precio
                     # lines['PrcItem'] = round(line.price_unit, 4)
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
-                    lines['PrcItem'] = round(price_unit, 4)
+                    lines['PrcItem'] = round(price_unit, 0)
 
                 if 1==1:
                     # try:
@@ -1581,7 +1581,7 @@ class InvoiceReference(models.Model):
     # desde acá. (la idea es que todos los posibles existan en el modelo
     # sii.document_class)
     prefix = fields.Char(
-        'Prefix', compute='_compute_ref' ,readonly=True,
+        'Prefix', compute='_compute_ref', readonly=True,
         help="<TipoDocRef>. Should be SII Code for docs, or this prefix if \
 does not exist.")
     # CodRef.. se usa solo si el doc principal es nota de credito o débito

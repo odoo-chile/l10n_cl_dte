@@ -1178,17 +1178,20 @@ sii_code:. {}'.format(
                     lines['CdgItem']['TpoCodigo'] = 'INT1'
                     lines['CdgItem']['VlrCodigo'] = line.product_id.default_code
                 # todo: mejorar el cálculo de impuestos
-                if self.product_is_exempt(line) and sii_code != 61:
-                    if sii_code != 34:
+                if self.product_is_exempt(line):
+                    if sii_code in [34, 61]:
+                        lines['IndExe'] = 1
+                        ind_exe_qty += 1
+                        MntExe += int(round(line.price_subtotal, 0))
+                    elif sii_code == 33:
                         raise UserError(u'''Esta implementación no permite \
 facturar items exentos en facturas afectas. Cambie el tipo de documento \
 o elimine el producto exento de esta factura.
 Producto que provocó el problema: {}'''.format(line.product_id.name))
-                    lines['IndExe'] = 1
-                    ind_exe_qty += 1
-                    MntExe += int(round(line.price_subtotal, 0))
                 else:
-                    if sii_code == 34:
+                    if sii_code in [33, 61]:
+                        pass
+                    elif sii_code == 34:
                         raise UserError(u'''{} - El producto seleccionado no \
 es exento. Deberá utilizar documento diferente a factura exenta para registrar \
 la venta, o cambiar el tipo de documento de forma acorde. Producto que \
@@ -1349,10 +1352,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Totales'] = collections.OrderedDict()
             MntTotal = int(round(inv.amount_total, 0))
             if True:
-                if sii_code == 34:
-                    dte['Encabezado']['Totales']['MntExe'] = int(round(
-                        inv.amount_total, 0))
-                else:
+                if sii_code in [34, 61] and MntExe > 0:
+                    dte['Encabezado']['Totales']['MntExe'] = MntExe
+                    # int(round(
+                    #    inv.amount_total, 0))
+                elif sii_code in [32, 61] and MntExe == 0:
                     dte['Encabezado']['Totales']['MntNeto'] = int(round(
                         inv.amount_untaxed, 0))
                     try:
@@ -1369,8 +1373,10 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['Encabezado']['Totales']['MntTotal'] = MntTotal
                 # dte['item'] = invoice_lines
                 dte['Detalles'] = invoice_lines
+                _logger.info(json.dumps(dte))
                 if len(ref_lines) > 0:
-                    dte['Referencias'].extend(ref_lines)
+                    # dte['Referencias'].extend(ref_lines)
+                    dte['Referencias'] = ref_lines
             else:
                 if sii_code == 34:
                     dte['Encabezado']['Totales']['MntExe'] = MntTotal
@@ -1385,8 +1391,9 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 # dte['DscRcgGlobal']['GlosaDR'] =
                 dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
-                if sii_code == 34:
+                if sii_code in [34, 61] and MntExe > 0:
                     dte['DscRcgGlobal']['IndExeDR'] = 1
+
             if inv.dte_service_provider in ['LIBREDTE', 'LIBREDTE_TEST']:
                 dte = self.remove_plurals(dte)
                 _logger.info(json.dumps(dte))
@@ -1407,7 +1414,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             # control dte
             _logger.info(dte)
             _logger.info(json.dumps(dte))
-            # raise UserError('verdte')
+            raise UserError('verdte')
             root = etree.XML(xml)
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(

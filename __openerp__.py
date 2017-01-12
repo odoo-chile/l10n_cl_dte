@@ -22,7 +22,7 @@
 {
     "name": """Chile - Web Services de Documentos Tributarios Electrónicos\
     """,
-    'version': '8.0.2.2.2',
+    'version': '8.0.2.2.3',
     'category': 'Localization/Chile',
     'sequence': 12,
     'author':  'Blanco Martín & Asociados',

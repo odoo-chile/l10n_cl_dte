@@ -766,8 +766,8 @@ stamp to be legally valid.''')
                 ['draft', 'proforma', 'proforma2', 'cancel'])])
         return rel_invoices
 
-    @api.one
-    def bring_generated_xml_ldte(self, inv, foliop=0, headers=''):
+    @api.multi
+    def bring_generated_xml_ldte(self, foliop=0, headers=''):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -776,7 +776,8 @@ stamp to be legally valid.''')
         :param inv:
         :return:
         """
-        # self.ensure_one()
+        self.ensure_one()
+        inv = self
         sii_code = inv.sii_document_class_id.sii_code
         folio = self.get_folio_current()
         if not folio:
@@ -847,7 +848,7 @@ stamp to be legally valid.''')
                     _logger.info(
                         'intentando traer el xml. headers: {}, folio: {}'.
                         format(headers, int(response_j['folio'])))
-                    response_j['xml'] = self.bring_generated_xml_ldte(inv,
+                    response_j['xml'] = self.bring_generated_xml_ldte(
                         int(response_j['folio']), headers=headers)
                 else:
                     raise UserError(

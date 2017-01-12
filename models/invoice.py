@@ -28,6 +28,7 @@ from xml.dom.minidom import parseString
 # from signxml import xmldsig, methods
 from signxml import *
 """
+New objects from signxml:
 [
     'DERSequenceOfIntegers', 'Element', 'Enum', 'Hash', 'InvalidCertificate',
     'InvalidDigest', 'InvalidInput', 'InvalidSignature', 'Namespace',
@@ -101,15 +102,15 @@ class Invoice(models.Model):
         :param dte:
         :return:
         """
-        if sii_code in [61, 56]:
-            raise UserError(
-                u"""En esta implementación, no pueden usarse descuentos \
-globales en notas de crédito""")
-        elif sii_code in [33]:
-            discount = discount * 1.19
+        # if sii_code in [61, 56]:
+        #     raise UserError(
+        #         u"""En esta implementación, no pueden usarse descuentos \
+        # globales#  en notas de crédito""")
+        # elif sii_code in [33]:
+        #     discount = discount * 1.19
         return discount
 
-    def enviar_ldte(self, inv, headers, dte):
+    def enviar_ldte(self, inv, dte, headers):
         """
         Función para enviar el dte a libreDTE
         @author: Daniel Blanco
@@ -118,38 +119,38 @@ globales en notas de crédito""")
         :param dte:
         :return:
         """
-        if True:
-            response_emitir = pool.urlopen(
-                'POST', api_emitir, headers=headers, body=json.dumps(
-                    dte))
-            if response_emitir.status != 200:
-                raise UserError(
-                    'Error en conexión al emitir: {}, {}'.format(
-                        response_emitir.status, response_emitir.data))
-            _logger.info('response_emitir: {}'.format(
+        response_emitir = pool.urlopen(
+            'POST', api_emitir, headers=headers, body=json.dumps(
+                dte))
+        if response_emitir.status != 200:
+            raise UserError(
+                '- Error en conexión al emitir: {}, {}'.format(
+                    response_emitir.status, response_emitir.data))
+        _logger.info('response_emitir: {}'.format(
+            response_emitir.data))
+        _logger.info('response_emitir respuesta satisfactoria')
+        try:
+            inv.sii_xml_response1 = response_emitir.data
+            _logger.info('response_xml: {}'.format(
                 response_emitir.data))
-            try:
-                inv.sii_xml_response1 = response_emitir.data
-            except:
-                _logger.warning(
-                    'no pudo guardar la respuesta al ws de emision')
-            '''
-            {"emisor": ----, "receptor": -, "dte": --,
-             "codigo": "-----"}
-            '''
-            response_emitir_data = response_emitir.data
-        else:
-            _logger.info('Obteniendo XML de preemision existente...')
-            response_emitir_data = inv.sii_xml_response1
-        # raise UserError(inv)
-        response_j = self.bring_xml_ldte(inv, response_emitir_data)
+            _logger.info('try positivo')
+        except:
+            _logger.warning(
+                'no pudo guardar la respuesta al ws de emision')
+            _logger.info('try negativo')
+        '''
+        {"emisor": ----, "receptor": -, "dte": --,
+         "codigo": "-----"}
+        '''
+        response_emitir_data = response_emitir.data
+        response_j = self.bring_xml_ldte(
+            inv, response_emitir_data, headers=headers)
+        _logger.info('vino de bring_xml_dte')
         _logger.info('response_j')
         _logger.info(response_j)
         self.set_folio(inv, response_j['folio'])
         _logger.info('set_folio:.....')
         if not inv.sii_xml_request:
-            # Mejorar esta parte del código ya que viene de cuando generar
-            # enviaba el xml
             inv.sii_xml_request = self.convert_encoding(
                 base64.b64decode(response_j['xml']))
         else:
@@ -626,7 +627,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         @version: 2016-05-01
         """
         return {
-            'type' : 'ir.actions.act_url',
+            'type': 'ir.actions.act_url',
             'url': '/web/binary/download_document?model=account.invoice\
 &field=sii_xml_request&id={}&filename=demoxml.xml'.format(self.id),
             'target': 'self'}
@@ -762,8 +763,8 @@ stamp to be legally valid.''')
                 ['draft', 'proforma', 'proforma2', 'cancel'])])
         return rel_invoices
 
-    @api.multi
-    def bring_generated_xml_ldte(self, foliop=0):
+    @api.one
+    def bring_generated_xml_ldte(self, inv, foliop=0, headers=''):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -772,15 +773,16 @@ stamp to be legally valid.''')
         :param inv:
         :return:
         """
-        self.ensure_one()
-        sii_code = self.sii_document_class_id.sii_code
+        # self.ensure_one()
+        sii_code = inv.sii_document_class_id.sii_code
         folio = self.get_folio_current()
         if not folio:
             folio = foliop
         emisor = self.format_vat(self.company_id.vat)
         _logger.info('entrada a bring_generated_xml_ldte. Folio: {}'.format(
             folio))
-        headers = self.create_headers_ldte()
+        if headers == '':
+            headers = self.create_headers_ldte()
         _logger.info('headers: {}'.format(headers))
         _logger.info(api_get_xml.format(sii_code, folio, emisor))
         response_xml = pool.urlopen(
@@ -789,35 +791,36 @@ stamp to be legally valid.''')
             raise UserError('Error: {}'.format(response_xml.data))
         _logger.info('response_generar: {}'.format(
             base64.b64decode(response_xml.data)))
-        self.sii_xml_request = base64.b64decode(response_xml.data)
+        inv.sii_xml_request = base64.b64decode(response_xml.data)
         attachment_obj = self.env['ir.attachment']
         _logger.info('Attachment')
-        _logger.info(self.sii_document_class_id.name)
+        _logger.info(inv.sii_document_class_id.name)
         attachment_id = attachment_obj.create(
             {
-                'name': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                'name': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
                     folio)+'.xml',
                 'datas': response_xml.data,
-                'datas_fname': 'DTE_'+self.sii_document_class_id.name+'-'+str(
+                'datas_fname': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
                     folio)+'.xml',
-                'res_model': self._name,
-                'res_id': self.id,
+                'res_model': inv._name,
+                'res_id': inv.id,
                 'type': 'binary'
             })
         _logger.info('Se ha generado factura en XML con el id {}'.format(
             attachment_id))
 
-
     @api.multi
-    def bring_xml_ldte(self, inv, response_emitir_data):
+    def bring_xml_ldte(self, inv, response_emitir_data, headers=''):
         """
         Función para tomar el XML generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-23
         """
-        # self.ensure_one()
         _logger.info('entrada a bringxml function')
-        headers = self.create_headers_ldte()
+        if headers == '':
+            headers = self.create_headers_ldte()
+        _logger.info('api: {}, headers: {}, body: {}'.format(
+            api_generar, headers, response_emitir_data))
         response_generar = pool.urlopen(
             'POST', api_generar, headers=headers,
             body=response_emitir_data)
@@ -834,51 +837,22 @@ stamp to be legally valid.''')
                 response_generar.data))
         _logger.info('response_j..folio..............')
         _logger.info(response_j['folio'])
-        """
-        {
-            "emisor":76201224,
-            "dte":34,
-            "folio":21,
-            "certificacion":1,
-            "tasa":0,
-            "fecha":"2016-12-26",
-            "sucursal_sii":null,
-            "receptor":"00000001",
-            "exento":1330000,
-            "neto":null,
-            "iva":0,
-            "total":1330000,
-            "usuario":1639,
-        ######            "xml":false,
-            "track_id":46192846,
-            "revision_estado":null,
-            "revision_detalle":null,
-            "anulado":0,
-            "iva_fuera_plazo":0,
-            "cesion_xml":null,
-            "cesion_track_id":null
-        }
-        """
         if not response_j['xml']:
             # no trajo el xml: hay que traerlo
             if True:
-                try:
-                    response_j['xml'] = self.bring_generated_xml_ldte(
-                        int(response_j['folio']))
-                except:
+                if True:
+                    _logger.info(
+                        'intentando traer el xml. headers: {}, folio: {}'.
+                        format(headers, int(response_j['folio'])))
+                    response_j['xml'] = self.bring_generated_xml_ldte(inv,
+                        int(response_j['folio']), headers=headers)
+                else:
                     raise UserError(
-                        'No se pudo recibir el XML de la factura. Sin embargo, \
+                        'No se pudo recibir el XML del documento. Sin embargo, \
 este puede haber sido generado en LibreDTE. coloque el folio en el campo \
 TRACKID antes de revalidar, reintente la validación.')
             else:
                 raise UserError('bring_gen: no pudo traer el xml')
-            '''
-            {"emisor":76085472,"dte":56,"folio":3,"certificacion":1,"tasa":19,
-            "fecha":"2016-07-02","sucursal_sii":null,"receptor":"00000001",
-            "exento":null,"neto":230000,"iva":43700,"total":273700,"usuario":1639,
-            {'emisor', 'dte', 'folio', 'certificacion', 'tasa', 'fecha',
-             'sucursal_sii', 'receptor', 'exento', 'neto', 'iva', 'total',
-             'usuario'}'''
         else:
             attachment_obj = self.env['ir.attachment']
             _logger.info('Attachment')
@@ -950,7 +924,7 @@ TRACKID antes de revalidar, reintente la validación.')
         else:
             self.ensure_one()
             _logger.info('entrada a bringpdf function')
-            headers = self.create_headers_ldte()
+            headers = self.create_headers_ldte(comp_id=self.company_id)
             # en lugar de third_party_xml, que ahora no va a existir más,
             # hay que tomar el xml del adjunto, o bien del texto
             # pero prefiero del adjunto
@@ -986,6 +960,16 @@ TRACKID antes de revalidar, reintente la validación.')
                     'type': 'binary'})
             _logger.info('Se ha generado factura en PDF con el id {}'.format(
                 attachment_id))
+
+    @staticmethod
+    def remove_plurals(dte):
+        dte = collections.OrderedDict(
+            [('Detalle', v) if k == 'Detalles' else (k, v) for k, v in
+             dte.items()])
+        dte = collections.OrderedDict(
+            [('Referencia', v) if k == 'Referencias' else (k, v) for k, v in
+             dte.items()])
+        return dte
 
     @staticmethod
     def product_is_exempt(line):
@@ -1154,18 +1138,12 @@ filename_field=name&id={}'.format(new_attach.id), 'target': 'self'}
             elif inv.dte_service_provider in ['', 'NONE']:
                 return
 
-            # definicion de los giros del emisor
-            # giros_emisor = []
-            # for turn in inv.company_id.company_activities_ids:
-            #     giros_emisor.extend([{'Acteco': turn.code}])
-            # definicion de lineas
             line_number = 1
             invoice_lines = []
             global_discount = 0
             ind_exe_qty = 0
             sum_lines = 0
             MntExe = 0
-            # journal_document_class_id manda
             inv.sii_document_class_id = \
                 inv.journal_document_class_id.sii_document_class_id
             _logger.info('doc class id: {} . sii doc class id: {}, \
@@ -1174,17 +1152,13 @@ sii_code:. {}'.format(
                 inv.journal_document_class_id.sii_document_class_id,
                 inv.journal_document_class_id.sii_document_class_id.sii_code))
             sii_code = inv.sii_document_class_id.sii_code
-            # corrige un problema de
-            # dcsii_id = self.env['sii.document_class'].search(
-            # [('sii_code', '=', sii_code)], limit=1)
-            # raise UserError(sii_code)
             for line in inv.invoice_line:
-                # se hizo de esta manera para que no dé error
                 try:
                     if line.product_id.is_discount:
                         global_discount += int(round(line.price_subtotal, 0))
                         global_discount = self._calc_discount_vat(
                             global_discount, sii_code)
+                        sum_lines += line.price_subtotal
                         continue
                 except:
                     if u'descuento' in line.product_id.name.lower() \
@@ -1192,9 +1166,9 @@ sii_code:. {}'.format(
                         global_discount += int(round(line.price_subtotal, 0))
                         global_discount = self._calc_discount_vat(
                             global_discount, sii_code)
+                        sum_lines += line.price_subtotal
                         continue
                     else:
-                        # no existe el campo is_discount
                         pass
                 sum_lines += line.price_subtotal
                 lines = collections.OrderedDict()
@@ -1205,9 +1179,6 @@ sii_code:. {}'.format(
                     lines['CdgItem']['VlrCodigo'] = line.product_id.default_code
                 # todo: mejorar el cálculo de impuestos
                 if self.product_is_exempt(line) and sii_code != 61:
-                    # manejo de error: momentaneamente para simplificar los
-                    # cálculos de impuestos, se impide colocar items exentos
-                    # en una factura afecta
                     if sii_code != 34:
                         raise UserError(u'''Esta implementación no permite \
 facturar items exentos en facturas afectas. Cambie el tipo de documento \
@@ -1218,38 +1189,28 @@ Producto que provocó el problema: {}'''.format(line.product_id.name))
                     MntExe += int(round(line.price_subtotal, 0))
                 else:
                     if sii_code == 34:
-                        raise UserError(u'''{} - El producto seleccionado no es \
-exento. Deberá utilizar documento diferente a factura exenta para registrar \
+                        raise UserError(u'''{} - El producto seleccionado no \
+es exento. Deberá utilizar documento diferente a factura exenta para registrar \
 la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 # continua si está todo bien
                 lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
-                # lines['DscItem'] = line.name
-                # si es cero y es nota de crédito o debito, los salteo a
-                # los dos
                 if line.quantity == 0 and line.price_unit == 0 and \
                                 sii_code in [61, 56]:
                     pass
                 else:
                     lines['QtyItem'] = round(line.quantity, 2)
                     # todo: opcional lines['UnmdItem'] = line.uos_id.name[:4]
-                    # reemplazo la formula de precio unitario para que sea
-                    # independiente de si se incluye o no el iva en el precio
-                    # lines['PrcItem'] = round(line.price_unit, 4)
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
                     lines['PrcItem'] = round(price_unit, 0)
 
-                if 1==1:
-                    # try:
+                if True:
                     if line.discount != 0:
                         lines['DescuentoPct'] = round(line.discount, 2)
                         lines['DescuentoMonto'] = int(
                             round((line.quantity * price_unit * line.discount)
                                   / 100, 0))
-                else:
-                    #except:
-                    pass
                 lines['MontoItem'] = int(round(line.price_subtotal, 0))
                 line_number = line_number + 1
                 if inv.dte_service_provider not in [
@@ -1265,8 +1226,6 @@ is {} does not match'.format(sii_code)))
             adi_lines = []
             if len(inv.ref_document_ids) > 0:
                 _logger.info(inv.ref_document_ids)
-                # inserción del detalle en caso que corresponda
-                #if inv.sii_document_class_id.sii_code in [61, 56]:
                 ref_order = 1
                 for ref_d in inv.ref_document_ids:
                     referencias = collections.OrderedDict()
@@ -1296,16 +1255,10 @@ is {} does not match'.format(sii_code)))
                             adi_lines.extend([adi_line])
                             adi_ref += 1
 
-            ##### lugar de corte posible para revisar creacion de test:
-            # _logger.info(invoice_lines)
-            #########################
-
             folio = self.get_folio(inv)
             dte = collections.OrderedDict()
             dte1 = collections.OrderedDict()
 
-            # dte['Documento ID'] = 'F{}T{}'.format(
-            # folio, inv.sii_document_class_id.sii_code)
             dte['Encabezado'] = collections.OrderedDict()
             dte['Encabezado']['IdDoc'] = collections.OrderedDict()
             dte['Encabezado']['IdDoc'][
@@ -1326,10 +1279,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Emisor']['RznSoc'] = inv.company_id.name
             dte['Encabezado']['Emisor']['GiroEmis'] = self.char_replace(
                 inv.turn_issuer.name)[:80]
-            # if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-            #     dte['Encabezado']['Emisor']['item'] = giros_emisor
-            #     # giros de la compañia - codigos
-            # else:
             try:
                 if inv.company_id.phone:
                     dte['Encabezado']['Emisor']['Telefono'] = inv.company_id.phone
@@ -1337,18 +1286,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 pass
             dte['Encabezado']['Emisor'][
                 'CorreoEmisor'] = inv.company_id.dte_email
-            # se quitan los actecos.. antes se ponía todos, pero no es claro
-            # en la http://www.sii.cl/factura_electronica/formato_dte.pdf
-            # porque dice que el maximo son 4 pero se acepta uno solo
-            # (al final, que quiere decir?? que se pueden 4 o que se puede 1??)
-            # ver pagina 14 item 34 - por las dudas dejo solo el que corresponde
-            # al name seleccionado.
             dte['Encabezado']['Emisor']['Acteco'] = inv.char_replace(
                 inv.turn_issuer.code)
             if inv.journal_id.point_of_sale_id.name not in ['', '---', True]:
                 dte['Encabezado']['Emisor']['CdgSIISucur'] =\
                     inv.journal_id.point_of_sale_id.name
-            # este deberia agregarse al "punto de venta" el cual ya esta
             dte['Encabezado']['Emisor']['DirOrigen'] = self.char_replace(
                 inv.company_id.street)
             dte['Encabezado']['Emisor']['CmnaOrigen'] = self.char_replace(
@@ -1361,13 +1303,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             except:
                 _logger.info('no se pudo leer el nombre del vendedor')
             dte['Encabezado']['Receptor'] = collections.OrderedDict()
-            # agregado de posibilidad de multiples direcciones, para el mismo
-            # partner si el registro es "hijo de" un partner principal,
-            # toma el nombre del partner principal.
-            # pero toma la direccion del partner seleccionado.
             if not inv.partner_id.parent_id:
-                # si viene por aca quiere decir que estoy tratando con la
-                # compañia principal
                 dte['Encabezado']['Receptor']['RUTRecep'] = self.format_vat(
                     inv.partner_id.vat)
                 dte['Encabezado']['Receptor'][
@@ -1380,8 +1316,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     dte['Encabezado']['Receptor'][
                         'Contacto'] = self.char_replace(inv.contact_data)
             else:
-                # si viene por aca significa que estoy en un partner "hijo"
-                # y debo tomar la razon social principal
                 dte['Encabezado']['Receptor']['RUTRecep'] = self.format_vat(
                     inv.partner_id.parent_id.vat)
                 dte['Encabezado']['Receptor'][
@@ -1413,17 +1347,12 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Receptor']['CiudadRecep'] = self.char_replace(
                 inv.partner_id.city)
             dte['Encabezado']['Totales'] = collections.OrderedDict()
-            #################################################
             MntTotal = int(round(inv.amount_total, 0))
-            if inv.dte_service_provider not in ['LIBREDTE', 'LIBREDTE_TEST']:
-                # (ficticio, para forzar envío)
+            if True:
                 if sii_code == 34:
-                    # en el caso que haya un tipo 34, el monto
-                    # exento va a coincidir con el total de la factura.
                     dte['Encabezado']['Totales']['MntExe'] = int(round(
                         inv.amount_total, 0))
                 else:
-                    # acá puede ocurrir que haya valores exentos involucrados
                     dte['Encabezado']['Totales']['MntNeto'] = int(round(
                         inv.amount_untaxed, 0))
                     try:
@@ -1431,29 +1360,23 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                             (inv.amount_total / inv.amount_untaxed - 1) * 100,
                             0))
                         # TODO: si este valor es distinto a 19%, hay un error
-                        # salvo que haya retenciones, que eso queda por hacer
                     except:
-                        # lo hardcodeamos para solucionar rapidamente el
-                        # problema cuando se usan n/c o n/d para hacer
-                        # modificaciones
                         _logger.info('calculo de iva total por excepcion')
                         dte['Encabezado']['Totales']['TasaIVA'] = 19
 
                     dte['Encabezado']['Totales']['IVA'] = MntTotal - dte[
                         'Encabezado']['Totales']['MntNeto']
                 dte['Encabezado']['Totales']['MntTotal'] = MntTotal
-                dte['item'] = invoice_lines
+                # dte['item'] = invoice_lines
+                dte['Detalles'] = invoice_lines
                 if len(ref_lines) > 0:
-                    dte['item'].extend(ref_lines)
+                    dte['Referencias'].extend(ref_lines)
             else:
                 if sii_code == 34:
-                    dte['Encabezado']['Totales']['MntExe'] = 0
-                # esto lo hace para libreDTE la construccion directa del valor
-                # en el diccionario. Porque en las otras opciones de XML
-                # hay problemas en esta parte al pasar de dict a xml
-                dte['Detalle'] = invoice_lines
+                    dte['Encabezado']['Totales']['MntExe'] = MntTotal
+                dte['Detalles'] = invoice_lines
                 if len(ref_lines) > 0:
-                    dte['Referencia'] = ref_lines
+                    dte['Referencias'] = ref_lines
             if global_discount != 0:
                 dte['DscRcgGlobal'] = collections.OrderedDict()
                 dte['DscRcgGlobal']['NroLinDR'] = 1
@@ -1462,10 +1385,16 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 # dte['DscRcgGlobal']['GlosaDR'] =
                 dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
-                if sii_code == 33:
+                if sii_code == 34:
                     dte['DscRcgGlobal']['IndExeDR'] = 1
-            _logger.info(dte)
-            # raise UserError('punto de control')
+            if inv.dte_service_provider in ['LIBREDTE', 'LIBREDTE_TEST']:
+                dte = self.remove_plurals(dte)
+                _logger.info(json.dumps(dte))
+                raise UserError('veadte antes de quitar totales')
+                # ademas le quito los totales
+                _logger.info('antes de quitar totales: {}'.format(
+                    dte['Encabezado']['Totales']))
+                del dte['Encabezado']['Totales']
             doc_id_number = "F{}T{}".format(
                 folio, sii_code)
             doc_id = '<Documento ID="{}">'.format(doc_id_number)
@@ -1475,8 +1404,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             xml = dicttoxml.dicttoxml(
                 dte1, root=False, attr_type=False).replace(
                     '<item>', '').replace('</item>', '')
-
-            root = etree.XML( xml )
+            # control dte
+            _logger.info(dte)
+            _logger.info(json.dumps(dte))
+            # raise UserError('verdte')
+            root = etree.XML(xml)
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(
 '<Documento_ID>', doc_id).replace('</Documento_ID>', '</Documento>')
@@ -1488,13 +1420,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     attr_type=False,
                     item_func=item_function)).toprettyxml().replace(
                     '<?xml version="1.0" ?>', '')
-                # raise UserError(xml_pret)
             xml_pret = self.create_template_doc(xml_pret)
             if inv.dte_service_provider in [
                 'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
                 enviar = 'true' if self.dte_service_provider == \
                                    'EFACTURADELSUR' else 'false'
-                # armado del envolvente rrespondiente a EACTURADELSUR
                 envelope_efact = '''<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" \
 xmlns:xsd="http://www.w3.org/2001/XMLSchema" \
@@ -1525,21 +1455,16 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 _logger.info('DTE enviado (json)')
                 _logger.info(json.dumps(dte))
                 # corte para debug
-                response_j = self.enviar_ldte(inv, headers, dte)
+                response_j = self.enviar_ldte(inv, dte, headers)
                 inv.write(
                     {
-                        #'third_party_xml': response_j['xml'],
                         'sii_result': 'Enviado',
-                        'sii_send_ident': response_j['track_id'],
-                        # 'third_party_pdf': base64.b64encode(invoice_pdf)
-                    })
+                        'sii_send_ident': response_j['track_id']})
                 _logger.info('se guardó xml con la factura')
             elif inv.dte_service_provider == 'FACTURACION':
                 envelope_efact = '''<?xml version="1.0" encoding="ISO-8859-1"?>
 {}'''.format(self.convert_encoding(xml_pret, 'ISO-8859-1'))
                 inv.sii_xml_request = envelope_efact
-                # raise UserError(envelope_efact)
-                # self.get_xml_file()
             else:
                 _logger.info('NO HUBO NINGUNA OPCION DTE VALIDA ({})'.format(
                     inv.dte_service_provider))
@@ -1548,23 +1473,9 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
 
 class InvoiceReference(models.Model):
     _name = "invoice.reference"
-    """
-    C<NroLinRef> ordinal. No se incluye. Se debe calcular al crear el
-    diccionario
-    C<TpoDocRef> i.sii_document_class_id.sii_code
-    *<FolioRef>  name
-    *<FchRef>	reference_date
-    *<CodRef>    codref
-    *<RazonRef>  reason
-    N<RUTOtr>    no implementado (por ahora)
-    N<IdAdicOtr> no implementado (por ahora)
-    N<IndGlobal> no se incluye
-    """
-    # Esta Factura
     invoice_id = fields.Many2one(
         'account.invoice', 'Invoice',
         required=True, ondelete='cascade', select=True, readonly=True)
-    # FolioRef
     parent_type = fields.Char('Parent Type')
     name = fields.Char(
         'Number', required=True, readonly=False,
@@ -1572,28 +1483,19 @@ class InvoiceReference(models.Model):
     sii_document_class_id = fields.Many2one(
         'sii.document_class', 'Ref Document',
         required=True, ondelete='cascade')
-    # FchRef
     reference_date = fields.Date(
         'Ref. Date', required=True, help="FchRef")
-    # si no hay un document class, puede tomar de éste (no implementado)
-    # por ejemplo "SET" para set de pruebas <TipoDocRef>
-    # si existe un sii_code toma el sii code. si no existe, lo tiene que tomar
-    # desde acá. (la idea es que todos los posibles existan en el modelo
-    # sii.document_class)
     prefix = fields.Char(
         'Prefix', compute='_compute_ref', readonly=True,
         help="<TipoDocRef>. Should be SII Code for docs, or this prefix if \
 does not exist.")
-    # CodRef.. se usa solo si el doc principal es nota de credito o débito
     codref = fields.Char('Cod.Ref', readonly=True, help="<CodRef>, Only \
 needed for credit notes and debit notes.")
-    # RazonRef "descuento por pronto pago" o "error en precio"
     reason = fields.Char('Reason', help="Related to <RazonRef>.")
 
     @api.multi
     @api.depends('sii_document_class_id')
     def _compute_ref(self):
-        # raise UserError('control reference')
         for i in self:
             if not i.sii_document_class_id.sii_code \
                     and i.sii_document_class_id.doc_code_prefix:

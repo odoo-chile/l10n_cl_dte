@@ -1390,7 +1390,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             if inv.dte_service_provider in ['LIBREDTE', 'LIBREDTE_TEST']:
                 dte = self.remove_plurals(dte)
                 _logger.info(json.dumps(dte))
-                raise UserError('veadte antes de quitar totales')
+                # raise UserError('veadte antes de quitar totales')
                 # ademas le quito los totales
                 _logger.info('antes de quitar totales: {}'.format(
                     dte['Encabezado']['Totales']))

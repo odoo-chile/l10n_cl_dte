@@ -148,30 +148,30 @@ class Invoice(models.Model):
         _logger.info('vino de bring_xml_dte')
         _logger.info('response_j')
         _logger.info(response_j)
-        self.set_folio(inv, response_j['folio'])
+        self.set_folio(inv, response_j['folio'], response_j['dte'])
         _logger.info('set_folio:.....')
-        if not inv.sii_xml_request:
-            inv.sii_xml_request = self.convert_encoding(
-                base64.b64decode(response_j['xml']))
-        else:
-            _logger.warning(u'El XML debería haber quedado almacenado. \
-se comprueba si existe...')
-        try:
-            _logger.info('Este es el XML decodificado:')
-            _logger.info(inv.sii_xml_request)
-        except:
-            raise UserError(u"""No se pudo obtener el XML desde LibreDTE. \
-Sin embargo, el documento puede haber sido emitido. Revise en LibreDTE si la \
-misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
-correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
-número, guarde la factura y reintente la validación para continuar.
-Le recomendamos no continuar facturando hasta realizar este proceso.""")
-            pass
-        try:
-            self.bring_pdf_ldte()
-        except:
-            pass
-            _logger.warning('no pudo traer el pdf')
+        #        if not inv.sii_xml_request:
+        #            inv.sii_xml_request = self.convert_encoding(
+        #                base64.b64decode(response_j['xml']))
+        #        else:
+        #            _logger.warning(u'El XML debería haber quedado almacenado. \
+        #se comprueba si existe...')
+        #        try:
+        #            _logger.info('Este es el XML decodificado:')
+        #            _logger.info(inv.sii_xml_request)
+        #        except:
+        #            raise UserError(u"""No se pudo obtener el XML desde LibreDTE. \
+        #Sin embargo, el documento puede haber sido emitido. Revise en LibreDTE si la \
+        #misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
+        #correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
+        #número, guarde la factura y reintente la validación para continuar.
+        #Le recomendamos no continuar facturando hasta realizar este proceso.""")
+        #            pass
+        #try:
+        #    self.bring_pdf_ldte()
+        #except:
+        #    pass
+        #    _logger.warning('no pudo traer el pdf')
         return response_j
 
     @staticmethod
@@ -217,7 +217,7 @@ Le recomendamos no continuar facturando hasta realizar este proceso.""")
         return inv.journal_document_class_id.sequence_id.number_next_actual
 
     @staticmethod
-    def set_folio(inv, folio):
+    def set_folio(inv, folio, dte):
         """
         Funcion para actualizar el folio tomando el valor devuelto por el
         tercera parte integrador.
@@ -225,7 +225,10 @@ Le recomendamos no continuar facturando hasta realizar este proceso.""")
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-23
         """
-        inv.journal_document_class_id.sequence_id.number_next_actual = folio
+        if dte in [52]:
+            inv.voucher_ids[0].book_id.sequence_id.number_next_actual = folio
+        else:
+            inv.journal_document_class_id.sequence_id.number_next_actual = folio
 
     @staticmethod
     def remove_indents(xml):
@@ -835,8 +838,8 @@ stamp to be legally valid.''')
             raise UserError('LibreDTE No pudo generar el XML.\n'
                 'Reintente en un instante. \n{}'.format(
                 response_generar.data))
-        _logger.info('response_j..folio..............')
-        _logger.info(response_j['folio'])
+        _logger.info('Folio desde response_j: {}, tipo dte: {}'.format(
+            response_j['folio'], response_j['dte']))
         if not response_j['xml']:
             # no trajo el xml: hay que traerlo
             if True:
@@ -1198,6 +1201,8 @@ la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 # continua si está todo bien
                 lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
+                if True:
+                    lines['DscItem'] = self.char_replace(line.name)[:80]
                 if line.quantity == 0 and line.price_unit == 0 and \
                                 sii_code in [61, 56]:
                     pass
@@ -1414,7 +1419,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             # control dte
             _logger.info(dte)
             _logger.info(json.dumps(dte))
-            raise UserError('verdte')
+            # raise UserError('verdte')
             root = etree.XML(xml)
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(

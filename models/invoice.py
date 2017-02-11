@@ -1473,7 +1473,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             # control dte
             _logger.info(dte)
             _logger.info(json.dumps(dte))
-            # raise UserError('verdte')
+            raise UserError('verdte')
             root = etree.XML(xml)
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(

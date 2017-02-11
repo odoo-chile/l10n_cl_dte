@@ -17,14 +17,11 @@ pip install --upgrade requests
 y
 pip install --upgrade urllib3
 '''
-#import urllib3
-#import certifi
 
 pool = urllib3.PoolManager()
 '''    cert_reqs='CERT_REQUIRED', # Force certificate check.
     ca_certs=certifi.where(),  # Path to the Certifi bundle.
 )'''
-#pool = urllib3.PoolManager()
 
 _logger = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ api_get_partner_data = host + '/dte/contribuyentes/info/'
 
 tax_resp_category = {u'1': u'res_IVARI',  u'2': u'res_BH'}
 
-class dteEmail(models.Model):
+class DteEmail(models.Model):
     '''
     Email for DTE stuff
     '''
@@ -67,15 +64,12 @@ class dteEmail(models.Model):
             return
         self.document_type_id = self.env.ref('l10n_cl_invoice.dt_RUT')
         rut = int(self.document_number.replace('.', '').replace('-', '')[:-1])
-        if self.company_id.dte_service_provider in [
-            'LIBREDTE', 'LIBREDTE_TEST']:
-            # web service
+        if self.company_id.dte_service_provider in ['LIBREDTE']:
             inv = self.env['account.invoice']
             headers = inv.create_headers_ldte(self.company_id)
             response_status = pool.urlopen(
                 'GET',
                 api_get_partner_data + str(rut), headers=headers)
-
             if response_status.status != 200:
                 _logger.info(
                     'Error al obtener datos del contribuyente: {}'.format(
@@ -83,10 +77,6 @@ class dteEmail(models.Model):
             partner_values = json.loads(response_status.data)
             _logger.info(partner_values)
 
-
-            # if response_status_j[
-            # 'contribuyente'] != False and self.name == False:
-            #     _logger.info('Condicion de nombre')
             '''
             recordmap = [
                 ['contribuyente', ''],

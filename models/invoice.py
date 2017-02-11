@@ -9,12 +9,9 @@ from datetime import datetime, timedelta
 import logging, re, json, os
 from lxml import etree
 from lxml.etree import Element, SubElement
-from lxml import objectify
-from lxml.etree import XMLSyntaxError
 import pytz
 import collections
 import urllib3
-import textwrap
 import xmltodict
 import dicttoxml
 from elaphe import barcode
@@ -24,41 +21,23 @@ import hashlib
 import cchardet
 import ssl
 from SOAPpy import SOAPProxy
-from xml.dom.minidom import parseString
 # from signxml import xmldsig, methods
+import textwrap
 from signxml import *
-"""
-New objects from signxml:
-[
-    'DERSequenceOfIntegers', 'Element', 'Enum', 'Hash', 'InvalidCertificate',
-    'InvalidDigest', 'InvalidInput', 'InvalidSignature', 'Namespace',
-    'PKCS1v15', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'SubElement',
-    'VerifyResult', 'XMLProcessor', 'XMLSignatureProcessor', 'XMLSigner',
-    'XMLVerifier', '__builtins__', '__doc__', '__file__', '__name__',
-    '__package__', '__path__', '_remove_sig', 'absolute_import',
-    'add_pem_header', 'b64decode', 'b64encode', 'bytes', 'bytes_to_long',
-    'default_backend', 'der_decoder', 'der_encoder', 'division', 'ds_tag',
-    'dsa', 'dsig11_tag', 'ec', 'ensure_bytes', 'ensure_str', 'etree',
-    'exceptions', 'fromstring', 'iterate_pem', 'long_to_bytes', 'methods',
-    'namedtuple', 'namespaces', 'print_function', 'rsa', 'str',
-    'strip_pem_header', 'unicode_literals', 'util', 'verify_x509_cert_chain'
-]
+from lxml import objectify
+from lxml.etree import XMLSyntaxError
 
+from xml.dom.minidom import parseString
+
+_logger = logging.getLogger(__name__)
 """
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 import OpenSSL
-from OpenSSL.crypto import *
+from OpenSSL.crypto import *"""
 
-try:
-    from cStringIO import StringIO
-except:
-    from StringIO import StringIO
 
-_logger = logging.getLogger(__name__)
 pool = urllib3.PoolManager()
-
-# hardcodeamos este valor por ahora
 xsdpath = os.path.dirname(os.path.realpath(__file__)).replace(
     '/models', '/static/xsd/')
 host = 'https://libredte.cl/api'
@@ -92,6 +71,50 @@ class Invoice(models.Model):
     """
     _inherit = "account.invoice"
 
+    def objectpicking(self, function):
+        def inner(*args, **kwargs):
+            try:
+                if self._context['active_model'] == 'stock.picking':
+                    inv = self.env['stock.picking'].browse(
+                        self._context['active_id'])
+                    sii_code = 52
+            except:
+                try:
+                    if self._context['params']['model'] == 'stock.picking':
+                        inv = self.env['stock.picking'].browse(
+                            self._context['params']['id'])
+                        sii_code = 52
+                except:
+                    self.ensure_one()
+                    inv = self
+                    sii_code = inv.sii_document_class_id.sii_code
+                    folio = self.get_folio_current()
+            finally:
+                self.ensure_one()
+                inv = self
+                sii_code = inv.sii_document_class_id.sii_code
+                folio = self.get_folio_current()
+
+            function(args, kwargs)
+        return inner
+
+    def pastelogo(function):
+        """
+        Función decoradora para agregar
+        el Logo de la empresa
+        """
+        def inner(*args, **kwargs):
+            image1 = function(args[0])
+            img = Image.open('./danlogoverth.jpg', 'r')
+            img_w, img_h = img.size
+            background = Image.new('RGBA', (744, 236), (255, 255, 255, 255))
+            bg_w, bg_h = background.size
+            background.paste(img, (28, 5))
+            background.paste(image1, (100, 0))
+            return background
+
+        return inner
+
     def _calc_discount_vat(self, discount, sii_code):
         """
         Función provisoria para calcular el descuento:
@@ -102,12 +125,6 @@ class Invoice(models.Model):
         :param dte:
         :return:
         """
-        # if sii_code in [61, 56]:
-        #     raise UserError(
-        #         u"""En esta implementación, no pueden usarse descuentos \
-        # globales#  en notas de crédito""")
-        # elif sii_code in [33]:
-        #     discount = discount * 1.19
         return discount
 
     def enviar_ldte(self, inv, dte, headers):
@@ -148,30 +165,6 @@ class Invoice(models.Model):
         _logger.info('vino de bring_xml_dte')
         _logger.info('response_j')
         _logger.info(response_j)
-        self.set_folio(inv, response_j['folio'], response_j['dte'])
-        _logger.info('set_folio:.....')
-        #        if not inv.sii_xml_request:
-        #            inv.sii_xml_request = self.convert_encoding(
-        #                base64.b64decode(response_j['xml']))
-        #        else:
-        #            _logger.warning(u'El XML debería haber quedado almacenado. \
-        #se comprueba si existe...')
-        #        try:
-        #            _logger.info('Este es el XML decodificado:')
-        #            _logger.info(inv.sii_xml_request)
-        #        except:
-        #            raise UserError(u"""No se pudo obtener el XML desde LibreDTE. \
-        #Sin embargo, el documento puede haber sido emitido. Revise en LibreDTE si la \
-        #misma ha sido generada, en cuyo caso, edite el trackID colocando el número \
-        #correspondiente en la pestaña \'Electronic Invoice\'. Una vez colocado dicho \
-        #número, guarde la factura y reintente la validación para continuar.
-        #Le recomendamos no continuar facturando hasta realizar este proceso.""")
-        #            pass
-        #try:
-        #    self.bring_pdf_ldte()
-        #except:
-        #    pass
-        #    _logger.warning('no pudo traer el pdf')
         return response_j
 
     @staticmethod
@@ -206,6 +199,17 @@ class Invoice(models.Model):
         return xml
 
     @staticmethod
+    def get_object_record_id(inv, call_model):
+        if call_model == 'stock.picking':
+            # raise UserError(inv._context)
+            try:
+                return inv._context['params']['id']
+            except:
+                return inv._context['active_id']
+        else:
+            return inv.id
+
+    @staticmethod
     def get_folio(inv):
         """
         Funcion para descargar el folio tomando el valor desde la secuencia
@@ -217,7 +221,7 @@ class Invoice(models.Model):
         return inv.journal_document_class_id.sequence_id.number_next_actual
 
     @staticmethod
-    def set_folio(inv, folio, dte):
+    def set_folio(inv, folio):
         """
         Funcion para actualizar el folio tomando el valor devuelto por el
         tercera parte integrador.
@@ -225,10 +229,10 @@ class Invoice(models.Model):
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-23
         """
-        if dte in [52]:
-            inv.voucher_ids[0].book_id.sequence_id.number_next_actual = folio
-        else:
-            inv.journal_document_class_id.sequence_id.number_next_actual = folio
+        # if dte in [52]:
+        #     inv.voucher_ids[0].book_id.sequence_id.number_next_actual = folio
+        # else:
+        inv.journal_document_class_id.sequence_id.number_next_actual = folio
 
     @staticmethod
     def remove_indents(xml):
@@ -257,20 +261,6 @@ class Invoice(models.Model):
         if new_coding.upper() != encoding.upper():
             data = data.decode(encoding, data).encode(new_coding)
         return data
-
-    @staticmethod
-    def what_is_this(s):
-        """
-        Funcion auxiliar para saber que codificacion tiene el string
-        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-01
-        """
-        if isinstance(s, str):
-            _logger.info("ordinary string")
-        elif isinstance(s, unicode):
-            _logger.info("unicode string")
-        else:
-            _logger.info("not a string")
 
     @staticmethod
     def xml_validator(some_xml_string, validation='doc'):
@@ -442,15 +432,33 @@ Linux/3.13.0-88-generic'
         return headers
 
     @api.multi
-    def check_dte_status(self):
+    def check_dte_status(self, inv='', foliop='', headers=''):
         """
         obtener estado de DTE.
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-06-16
         """
-        self.ensure_one()
-        folio = self.get_folio_current()
-        if self.dte_service_provider in [
+        try:
+            if str(inv._model) == 'stock.picking':
+                company_id_vat = inv.company_id.vat
+                sii_code = 52
+                pass
+            else:
+                self.ensure_one()
+                # raise UserError('else: {}'.format(self.company_id.vat))
+                sii_code = inv.sii_document_class_id.sii_code
+                inv = self
+                folio = self.get_folio_current()
+        except:
+            self.ensure_one()
+            company_id_vat = self.company_id.vat
+            inv = self
+        try:
+            if not folio:
+                folio = foliop
+        except:
+            folio = foliop
+        if inv.dte_service_provider in [
             'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
             # reobtener el folio
             folio = self.get_folio_current(self.document_number)
@@ -472,10 +480,9 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
 </soap12:Envelope>'''.format(
             dte_username,
             dte_password,
-            self.format_vat(self.company_id.vat),
+            self.format_vat(company_id_vat),
             self.sii_document_class_id.sii_code,
             folio)
-
             _logger.info("envio: {}".format(envio_check))
             host = 'https://www.efacturadelsur.cl'
             post = '/ws/DTE.asmx'  # HTTP/1.1
@@ -506,7 +513,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             root = etree.fromstring(response.data)
             raise UserError(root.ObtenerEstadoDTEResult)
 
-        elif self.dte_service_provider in ['LIBREDTE', 'LIBREDTE_TEST']:
+        elif inv.dte_service_provider in ['LIBREDTE', 'LIBREDTE_TEST']:
             '''
             {
                 "track_id": ---,
@@ -514,16 +521,18 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                 "revision_detalle": "DTE aceptado"
             }
             '''
-            headers = self.create_headers_ldte()
+            if headers == '':
+                headers = self.create_headers_ldte(comp_id=self.company_id)
             metodo = 1  # =1 servicio web, =0 correo
             # consultar estado de dte emitido
+            # raise UserError('headers:{}, sii_code:{}, folio:{}, vat:{}, metodo:{}'.format(
+            #    headers, sii_code, folio, str(self.format_vat(company_id_vat)),
+            #    metodo))
             response_status = pool.urlopen(
                 'GET',
-                api_upd_satus + str(
-                    self.sii_document_class_id.sii_code) + '/' + str(
+                api_upd_satus + str(sii_code) + '/' + str(
                     folio) + '/' + str(self.format_vat(
-                    self.company_id.vat)) + '/' + str(metodo),
-                headers=headers)
+                        company_id_vat)) + '/' + str(metodo), headers=headers)
 
             if response_status.status != 200:
                 raise UserError(
@@ -553,14 +562,14 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                      'RCT - Rechazado por Error en Carátula']:
                 resultado_status = 'Rechazado'
             else:
-                resultado_status = self.sii_result
+                resultado_status = inv.sii_result
             _logger.info('a grabar resultado_status: {}'.format(
                 resultado_status))
             setenvio = {
                 'sii_xml_response2': response_status.data,
                 'sii_result': resultado_status,
                 'invoice_printed': 'printed'}
-            self.write(setenvio)
+            inv.write(setenvio)
             _logger.info(
                 'resultado_status grabado: {}'.format(self.sii_result))
             _logger.info(response_status_j['revision_estado'])
@@ -767,22 +776,34 @@ stamp to be legally valid.''')
         return rel_invoices
 
     @api.multi
-    def bring_generated_xml_ldte(self, foliop=0, headers=''):
+    def bring_generated_xml_ldte(
+            self, foliop=0, headers='', call_model=''):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
         @version: 2016-12-16
-        :param inv:
         :return:
         """
-        self.ensure_one()
-        inv = self
-        sii_code = inv.sii_document_class_id.sii_code
-        folio = self.get_folio_current()
-        if not folio:
+        ## manejo de excepciones para reusar esta función desde stock.picking
+        # raise UserError(self._context, call_model)
+        if call_model == 'stock.picking' or \
+                        self._context['active_model'] == 'stock.picking':
+            inv = self.env['stock.picking'].browse(
+                self._context['active_id'])
+            sii_code = 52
+        else:
+            self.ensure_one()
+            inv = self
+            sii_code = inv.sii_document_class_id.sii_code
+            folio = self.get_folio_current()
+
+        try:
+            if not folio:
+                folio = foliop
+        except:
             folio = foliop
-        emisor = self.format_vat(self.company_id.vat)
+        emisor = self.format_vat(inv.company_id.vat)
         _logger.info('entrada a bring_generated_xml_ldte. Folio: {}'.format(
             folio))
         if headers == '':
@@ -798,20 +819,24 @@ stamp to be legally valid.''')
         inv.sii_xml_request = base64.b64decode(response_xml.data)
         attachment_obj = self.env['ir.attachment']
         _logger.info('Attachment')
-        _logger.info(inv.sii_document_class_id.name)
+        attachment_name = self.get_attachment_name(
+            inv, call_model=str(inv._name))
+        record_id = self.get_object_record_id(inv, call_model=str(inv._name))
+        _logger.info(attachment_name)
         attachment_id = attachment_obj.create(
             {
-                'name': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
+                'name': 'DTE_'+attachment_name+'-'+str(
                     folio)+'.xml',
                 'datas': response_xml.data,
-                'datas_fname': 'DTE_'+inv.sii_document_class_id.name+'-'+str(
+                'datas_fname': 'DTE_'+attachment_name+'-'+str(
                     folio)+'.xml',
-                'res_model': inv._name,
-                'res_id': inv.id,
+                'res_model': str(inv._name),
+                'res_id': record_id,
                 'type': 'binary'
             })
-        _logger.info('Se ha generado factura en XML con el id {}'.format(
-            attachment_id))
+        _logger.info(
+            'Se ha generado factura en XML con el id {} para el id {}'.format(
+            attachment_id, record_id))
 
     @api.multi
     def bring_xml_ldte(self, inv, response_emitir_data, headers=''):
@@ -878,18 +903,20 @@ TRACKID antes de revalidar, reintente la validación.')
         return response_j
 
     @api.multi
-    def get_xml_attachment(self):
+    def get_xml_attachment(self, inv=''):
         """
         Función para leer el xml para libreDTE desde los attachments
         @author: Daniel Blanco Martín (daniel[at]blancomartin.cl)
         @version: 2016-07-01
         """
-        self.ensure_one()
+        # self.ensure_one()
+        if inv == '':
+            inv = self
         _logger.info('entrando a la funcion de toma de xml desde attachments')
-        pass
+        xml_attachment = ''
         attachment_id = self.env['ir.attachment'].search([
-            ('res_model', '=', self._name),
-            ('res_id', '=', self.id,),
+            ('res_model', '=', inv._name),
+            ('res_id', '=', inv.id,),
             ('name', 'like', 'DTE_'),
             ('name', 'ilike', '.xml')])
 
@@ -908,7 +935,7 @@ TRACKID antes de revalidar, reintente la validación.')
     obtener el PDF desde LibreDTE
     '''
     @api.multi
-    def bring_pdf_ldte(self):
+    def bring_pdf_ldte(self, foliop='', headers='', call_model=''):
         """
         Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
@@ -919,6 +946,7 @@ TRACKID antes de revalidar, reintente la validación.')
         @review: Juan Plaza (jplaza@isos.cl)
         @version: 2016-09-28
         """
+        _logger.info('bring_pdf_ldte.. call_model: {}'.format(call_model))
         attachment_obj = self.env['ir.attachment']
         if attachment_obj.search(
                 [('res_model', '=', self._name), ('res_id', '=', self.id,),
@@ -926,13 +954,30 @@ TRACKID antes de revalidar, reintente la validación.')
                  ('name', 'not like', 'cedible'), ('name', 'ilike', '.pdf')]):
             pass
         else:
-            self.ensure_one()
+            if call_model == 'stock.picking':
+                _logger.info(
+                    'contexto en bring_pdf_ldte: {}'.format(self._context))
+                inv = self.env['stock.picking'].browse(
+                    self._context['active_id'])
+                sii_code = 52
+            else:
+                self.ensure_one()
+                inv = self
+                sii_code = inv.sii_document_class_id.sii_code
+                folio = self.get_folio_current()
+            try:
+                if not folio:
+                    folio = foliop
+            except:
+                folio = foliop
+
             _logger.info('entrada a bringpdf function')
-            headers = self.create_headers_ldte(comp_id=self.company_id)
+            if not headers:
+                headers = self.create_headers_ldte(comp_id=self.company_id)
             # en lugar de third_party_xml, que ahora no va a existir más,
             # hay que tomar el xml del adjunto, o bien del texto
             # pero prefiero del adjunto
-            dte_xml = self.get_xml_attachment()
+            dte_xml = self.get_xml_attachment(inv)
             dte_tributarias = self.company_id.dte_tributarias \
                 if self.company_id.dte_tributarias else 1
             dte_cedibles = self.company_id.dte_cedibles \
@@ -951,19 +996,27 @@ TRACKID antes de revalidar, reintente la validación.')
                 raise UserError('Error en conexión al generar: {}, {}'.format(
                     response_pdf.status, response_pdf.data))
             invoice_pdf = base64.b64encode(response_pdf.data)
+            # raise UserError(inv._name)
+            attachment_name = self.get_attachment_name(
+                inv, call_model=str(inv._name))
             attachment_obj = self.env['ir.attachment']
+            # raise UserError(inv._name, inv.id, inv._context)
+            record_id = self.get_object_record_id(
+                inv, call_model=str(inv._name))
             attachment_id = attachment_obj.create(
                 {
-                    'name': 'DTE_' + self.sii_document_class_id.name +
-                            '-' + self.sii_document_number + '.pdf',
+                    'name': 'DTE_' + attachment_name +
+                            '-' + str(folio) + '.pdf',
                     'datas': invoice_pdf,
-                    'datas_fname': 'DTE_' + self.sii_document_class_id.name +
-                                   '-' + self.sii_document_number + '.pdf',
-                    'res_model': self._name,
-                    'res_id': self.id,
+                    'datas_fname': 'DTE_' + attachment_name +
+                                   '-' + str(folio) + '.pdf',
+                    'res_model': inv._name,
+                    'res_id': record_id,
                     'type': 'binary'})
-            _logger.info('Se ha generado factura en PDF con el id {}'.format(
-                attachment_id))
+            _logger.info('attachment pdf')
+            _logger.info(attachment_name)
+            _logger.info(attachment_id)
+            _logger.info(record_id)
 
     @staticmethod
     def remove_plurals(dte):
@@ -1474,6 +1527,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                         'sii_result': 'Enviado',
                         'sii_send_ident': response_j['track_id']})
                 _logger.info('se guardó xml con la factura')
+                self.set_folio(inv, response_j['folio'])
             elif inv.dte_service_provider == 'FACTURACION':
                 envelope_efact = '''<?xml version="1.0" encoding="ISO-8859-1"?>
 {}'''.format(self.convert_encoding(xml_pret, 'ISO-8859-1'))

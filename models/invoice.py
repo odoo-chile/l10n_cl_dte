@@ -61,6 +61,165 @@ special_chars = [
     [u'Ú', 'U'],
     [u'Ñ', 'N']]
 
+"""
+Diccionario para normalizar datos y emplear en diversos tipos de documentos
+a Futuro.
+La idea es cambiar la manera en que se rellenan, normalizan, y validan los
+tags, mediante una forma unificada y tendiendo a usar decoradores y funciones
+para todas las finalidades.
+Además esta parte de la implementación, para mejor efectividad se deberá migrar
+a una biblioteca separada, de manera que se pueda acceder desde diferentes
+addons: permitiendo así seguir el principio "DRY" de Python.
+el value[0] de la lista representa la longitud admitida
+Propuesta:
+todo: el value[1] si es obligatorio o no
+todo: el value[2] puede ser la llamada a funcion para validar
+todo: el value[3] el nombre de campo mapeado en Odoo
+@author: Daniel Blanco Martín daniel[at]blancomartin.cl
+@version: 2017-02-11
+"""
+normalize_tags = collections.OrderedDict()
+normalize_tags['Encabezado'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Emisor'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Emisor']['RutEmisor'] = [10]
+normalize_tags['Encabezado']['Emisor']['RznSoc'] = [100]
+normalize_tags['Encabezado']['Emisor']['GiroEmis'] = [80]
+normalize_tags['Encabezado']['Emisor']['Telefono'] = [20]
+normalize_tags['Encabezado']['Emisor']['CorreoEmisor'] = [80]
+normalize_tags['Encabezado']['Emisor']['Acteco'] = [6]
+normalize_tags['Encabezado']['Emisor']['CdgTraslado'] = [1]
+normalize_tags['Encabezado']['Emisor']['FolioAut'] = [5]
+normalize_tags['Encabezado']['Emisor']['FchAut'] = [10]
+normalize_tags['Encabezado']['Emisor']['Sucursal'] = [20]
+normalize_tags['Encabezado']['Emisor']['CdgSIISucur'] = [9]
+normalize_tags['Encabezado']['Emisor']['CodAdicSucur'] = [20]
+normalize_tags['Encabezado']['Emisor']['DirOrigen'] = [60]
+normalize_tags['Encabezado']['Emisor']['CmnaOrigen'] = [20]
+normalize_tags['Encabezado']['Emisor']['CiudadOrigen'] = [20]
+normalize_tags['Encabezado']['Emisor']['CdgVendedor'] = [60]
+normalize_tags['Encabezado']['Emisor']['IdAdicEmisor'] = [20]
+normalize_tags['Encabezado']['Emisor']['IdAdicEmisor'] = [20]
+normalize_tags['Encabezado']['Receptor'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Receptor']['RUTRecep'] = [10]
+normalize_tags['Encabezado']['Receptor']['CdgIntRecep'] = [20]
+normalize_tags['Encabezado']['Receptor']['RznSocRecep'] = [100]
+normalize_tags['Encabezado']['Receptor']['NumId'] = [20]
+normalize_tags['Encabezado']['Receptor']['Nacionalidad'] = [3]
+normalize_tags['Encabezado']['Receptor']['IdAdicRecep'] = [20]
+normalize_tags['Encabezado']['Receptor']['GiroRecep'] = [40]
+normalize_tags['Encabezado']['Receptor']['Contacto'] = [80]
+normalize_tags['Encabezado']['Receptor']['CorreoRecep'] = [80]
+normalize_tags['Encabezado']['Receptor']['DirRecep'] = [70]
+normalize_tags['Encabezado']['Receptor']['CmnaRecep'] = [20]
+normalize_tags['Encabezado']['Receptor']['CiudadRecep'] = [20]
+normalize_tags['Encabezado']['Receptor']['DirPostal'] = [70]
+normalize_tags['Encabezado']['Receptor']['CmnaPostal'] = [20]
+normalize_tags['Encabezado']['Receptor']['CiudadPostal'] = [20]
+normalize_tags['Encabezado']['Transporte'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Transporte']['Patente'] = [8]
+normalize_tags['Encabezado']['Transporte']['RUTTrans'] = [10]
+normalize_tags['Encabezado']['Transporte']['RUTChofer'] = [10]
+normalize_tags['Encabezado']['Transporte']['NombreChofer'] = [30]
+normalize_tags['Encabezado']['Transporte']['DirDest'] = [70]
+normalize_tags['Encabezado']['Transporte']['CmnaDest'] = [20]
+normalize_tags['Encabezado']['Transporte']['CiudadDest'] = [20]
+normalize_tags['Encabezado']['Transporte']['CiudadDest'] = [20]
+normalize_tags['Encabezado']['Totales'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Totales']['MntNeto'] = [18]
+normalize_tags['Encabezado']['Totales']['MntExe'] = [18]
+normalize_tags['Encabezado']['Totales']['MntBase'] = [18]
+normalize_tags['Encabezado']['Totales']['MntMargenCom'] = [18]
+normalize_tags['Encabezado']['Totales']['TasaIVA'] = [5]
+normalize_tags['Encabezado']['Totales']['IVA'] = [18]
+normalize_tags['Encabezado']['Totales']['IVAProp'] = [18]
+normalize_tags['Encabezado']['Totales']['IVATerc'] = [18]
+# pluralizado deliberadamente 'ImptoRetens' en lugar de ImptoReten
+normalize_tags[
+    'Encabezado']['Totales']['ImptoRetens'] = collections.OrderedDict()
+normalize_tags[
+    'Encabezado']['Totales']['ImptoRetens'][
+    'ImptoReten'] = collections.OrderedDict()
+normalize_tags['Encabezado']['Totales']['ImptoRetens']['ImptoReten'][
+    'TipoImp'] = [3]
+normalize_tags['Encabezado']['Totales']['ImptoRetens']['ImptoReten'][
+    'TasaImp'] = [5]
+normalize_tags['Encabezado']['Totales']['ImptoRetens']['ImptoReten'][
+    'MontoImp'] = [18]
+normalize_tags['Encabezado']['Totales']['IVANoRet'] = [18]
+normalize_tags['Encabezado']['Totales']['CredEC'] = [18]
+normalize_tags['Encabezado']['Totales']['GmtDep'] = [18]
+normalize_tags['Encabezado']['Totales']['ValComNeto'] = [18]
+normalize_tags['Encabezado']['Totales']['ValComExe'] = [18]
+normalize_tags['Encabezado']['Totales']['ValComIVA'] = [18]
+normalize_tags['Encabezado']['Totales']['MntTotal'] = [18]
+normalize_tags['Encabezado']['Totales']['MontoNF'] = [18]
+normalize_tags['Encabezado']['Totales']['MontoPeriodo'] = [18]
+normalize_tags['Encabezado']['Totales']['SaldoAnterior'] = [18]
+normalize_tags['Encabezado']['Totales']['VlrPagar'] = [18]
+normalize_tags['Encabezado']['OtraMoneda'] = collections.OrderedDict()
+normalize_tags['Encabezado']['OtraMoneda']['TpoMoneda'] = [15]
+normalize_tags['Encabezado']['OtraMoneda']['TpoCambio'] = [10]
+normalize_tags['Encabezado']['OtraMoneda']['MntNetoOtrMnda'] = [18]
+normalize_tags['Encabezado']['OtraMoneda']['MntExeOtrMnda'] = [18]
+normalize_tags['Encabezado']['OtraMoneda']['MntFaeCarneOtrMnda'] = [18]
+normalize_tags['Encabezado']['OtraMoneda']['MntMargComOtrMnda'] = [18]
+normalize_tags['Encabezado']['OtraMoneda']['IVAOtrMnda'] = [18]
+# pluralizado deliberadamente 'Detalles' en lugar de ImptoReten
+# se usó 'Detalles' (plural) para diferenciar del tag real 'Detalle'
+# el cual va aplicado a cada elemento de la lista o tabla.
+# según el tipo de comunicación, se elimina el tag Detalles o se le quita el
+# plural en la conversion a xml
+normalize_tags['Detalles'] = collections.OrderedDict()
+normalize_tags['Detalles']['Detalle'] = collections.OrderedDict()
+normalize_tags['Detalles']['Detalle']['NroLinDet'] = [4]
+# ojo qu este que sigue es tabla tambien
+normalize_tags['Detalles']['Detalle']['TpoCodigo'] = [10]
+normalize_tags['Detalles']['Detalle']['VlrCodigo'] = [35]
+normalize_tags['Detalles']['Detalle']['TpoDocLiq'] = [3]
+normalize_tags['Detalles']['Detalle']['IndExe'] = [3]
+# todo: falta retenedor
+normalize_tags['Detalles']['Detalle']['NmbItem'] = [80]
+normalize_tags['Detalles']['Detalle']['DscItem'] = [1000]
+normalize_tags['Detalles']['Detalle']['QtyRef'] = [18]
+normalize_tags['Detalles']['Detalle']['UnmdRef'] = [4]
+normalize_tags['Detalles']['Detalle']['PrcRef'] = [18]
+normalize_tags['Detalles']['Detalle']['QtyItem'] = [18]
+# todo: falta tabla subcantidad
+normalize_tags['Detalles']['Detalle']['FchElabor'] = [10]
+normalize_tags['Detalles']['Detalle']['FchVencim'] = [10]
+normalize_tags['Detalles']['Detalle']['UnmdItem'] = [10]
+normalize_tags['Detalles']['Detalle']['PrcItem'] = [18]
+# todo: falta tabla OtrMnda
+normalize_tags['Detalles']['Detalle']['DescuentoOct'] = [5]
+normalize_tags['Detalles']['Detalle']['DescuentoMonto'] = [18]
+# todo: falta tabla distrib dcto
+# todo: falta tabla distrib recargo
+# todo: falta tabla cod imp adicional y retenciones
+normalize_tags['Detalles']['Detalle']['MontoItem'] = [18]
+# todo: falta subtotales informativos
+# ojo que estos descuentos podrían ser globales más de uno,
+# pero la implementación soporta uno solo
+normalize_tags['DscRcgGlobal'] = collections.OrderedDict()
+normalize_tags['DscRcgGlobal']['NroLinDR'] = [2]
+normalize_tags['DscRcgGlobal']['TpoMov'] = [1]
+normalize_tags['DscRcgGlobal']['GlosaDR'] = [45]
+normalize_tags['DscRcgGlobal']['TpoValor'] = [1]
+normalize_tags['DscRcgGlobal']['ValorDR'] = [18]
+normalize_tags['DscRcgGlobal']['ValorDROtrMnda'] = [18]
+normalize_tags['DscRcgGlobal']['IndExeDR'] = [1]
+# pluralizado deliberadamente
+normalize_tags['Referencias'] = collections.OrderedDict()
+normalize_tags['Referencias']['Referencia'] = collections.OrderedDict()
+normalize_tags['Referencias']['Referencia']['NroLinRef'] = [2]
+normalize_tags['Referencias']['Referencia']['TpoDocRef'] = [3]
+normalize_tags['Referencias']['Referencia']['IndGlobal'] = [3]
+normalize_tags['Referencias']['Referencia']['FolioRef'] = [18]
+normalize_tags['Referencias']['Referencia']['RUTOtr'] = [10]
+normalize_tags['Referencias']['Referencia']['IdAdicOtr'] = [20]
+normalize_tags['Referencias']['Referencia']['FchRef'] = [10]
+normalize_tags['Referencias']['Referencia']['CodRef'] = [1]
+normalize_tags['Referencias']['Referencia']['RazonRef'] = [1]
+# todo: faltan comisiones y otros cargos
 
 class Invoice(models.Model):
     """
@@ -136,6 +295,8 @@ class Invoice(models.Model):
         :param dte:
         :return:
         """
+        _logger.info(json.dumps(dte))
+        # raise UserError('----ver ------')
         response_emitir = pool.urlopen(
             'POST', api_emitir, headers=headers, body=json.dumps(
                 dte))
@@ -676,6 +837,12 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         """
         return value[2:10] + '-' + value[10:]
 
+    @staticmethod
+    def get_attachment_name(inv, call_model=''):
+        if call_model == 'stock.picking':
+            return 'guia-despacho'
+        else:
+            return inv.sii_document_class_id.name
 
     """
     Definicion de extension de modelo de datos para account.invoice
@@ -883,6 +1050,7 @@ TRACKID antes de revalidar, reintente la validación.')
             else:
                 raise UserError('bring_gen: no pudo traer el xml')
         else:
+            _logger.info('!------------------------######______________!!')
             attachment_obj = self.env['ir.attachment']
             _logger.info('Attachment')
             _logger.info(inv.sii_document_class_id.name)
@@ -1446,7 +1614,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                 dte['DscRcgGlobal'] = collections.OrderedDict()
                 dte['DscRcgGlobal']['NroLinDR'] = 1
                 dte['DscRcgGlobal'][
-                    'TpoMov'] = 'D' if global_discount < 0 else 'R'
+                    'TpoMov'] = 'D' if global_discount < 0 else 'Receptor'
                 # dte['DscRcgGlobal']['GlosaDR'] =
                 dte['DscRcgGlobal']['TpoValor'] = '$'
                 dte['DscRcgGlobal']['ValorDR'] = round(abs(global_discount))
@@ -1473,7 +1641,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             # control dte
             _logger.info(dte)
             _logger.info(json.dumps(dte))
-            raise UserError('verdte')
+            # raise UserError('verdte.....')
             root = etree.XML(xml)
 
             xml_pret = etree.tostring(root, pretty_print=True).replace(

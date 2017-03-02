@@ -44,6 +44,7 @@ host = 'https://libredte.cl/api'
 api_emitir = host + '/dte/documentos/emitir'
 api_generar = host + '/dte/documentos/generar'
 api_gen_pdf = host + '/dte/documentos/generar_pdf'
+api_get_doc = host + '/dte/dte_emitidos/{0}/{1}/{2}/{3}'
 api_get_xml = host + '/dte/dte_emitidos/xml/{0}/{1}/{2}'
 api_upd_satus = host + '/dte/dte_emitidos/actualizar_estado/'
 no_product = False
@@ -944,7 +945,7 @@ stamp to be legally valid.''')
 
     @api.multi
     def bring_generated_xml_ldte(
-            self, foliop=0, headers='', call_model=''):
+            self, foliop=0, headers='', call_model='', r_id=False):
         """
         Función para traer el XML que ya fué generado anteriormente, y sobre
         el cual existe un track id.
@@ -953,18 +954,24 @@ stamp to be legally valid.''')
         :return:
         """
         ## manejo de excepciones para reusar esta función desde stock.picking
-        # raise UserError(self._context, call_model)
-        if call_model == 'stock.picking' or \
-                        self._context['active_model'] == 'stock.picking':
-            inv = self.env['stock.picking'].browse(
-                self._context['active_id'])
-            sii_code = 52
-        else:
+        # raise UserError('self_context: {}, call_model: {}'.format(
+        #     self._context, call_model))
+        try:
+            if call_model == 'stock.picking' or \
+                            self._context['active_model'] == 'stock.picking':
+                inv = self.env['stock.picking'].browse(
+                    self._context['active_id'])
+                sii_code = 52
+            else:
+                self.ensure_one()
+                inv = self
+                sii_code = inv.sii_document_class_id.sii_code
+                folio = self.get_folio_current()
+        except:
             self.ensure_one()
             inv = self
             sii_code = inv.sii_document_class_id.sii_code
             folio = self.get_folio_current()
-
         try:
             if not folio:
                 folio = foliop
@@ -976,9 +983,10 @@ stamp to be legally valid.''')
         if headers == '':
             headers = self.create_headers_ldte()
         _logger.info('headers: {}'.format(headers))
-        _logger.info(api_get_xml.format(sii_code, folio, emisor))
+        _logger.info(api_get_doc.format('xml', sii_code, folio, emisor))
         response_xml = pool.urlopen(
-            'GET', api_get_xml.format(sii_code, folio, emisor), headers=headers)
+            'GET', api_get_doc.format(
+                'xml', sii_code, folio, emisor), headers=headers)
         if response_xml.status != 200:
             raise UserError('Error: {}'.format(response_xml.data))
         _logger.info('response_generar: {}'.format(
@@ -988,7 +996,8 @@ stamp to be legally valid.''')
         _logger.info('Attachment')
         attachment_name = self.get_attachment_name(
             inv, call_model=str(inv._name))
-        record_id = self.get_object_record_id(inv, call_model=str(inv._name))
+        record_id = r_id or self.get_object_record_id(
+            inv, call_model=str(inv._name))
         _logger.info(attachment_name)
         attachment_id = attachment_obj.create(
             {
@@ -1050,7 +1059,6 @@ TRACKID antes de revalidar, reintente la validación.')
             else:
                 raise UserError('bring_gen: no pudo traer el xml')
         else:
-            _logger.info('!------------------------######______________!!')
             attachment_obj = self.env['ir.attachment']
             _logger.info('Attachment')
             _logger.info(inv.sii_document_class_id.name)
@@ -1103,7 +1111,7 @@ TRACKID antes de revalidar, reintente la validación.')
     obtener el PDF desde LibreDTE
     '''
     @api.multi
-    def bring_pdf_ldte(self, foliop='', headers='', call_model=''):
+    def bring_pdf_ldte_old(self, foliop='', headers='', call_model=''):
         """
         Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
@@ -1170,6 +1178,100 @@ TRACKID antes de revalidar, reintente la validación.')
             attachment_obj = self.env['ir.attachment']
             # raise UserError(inv._name, inv.id, inv._context)
             record_id = self.get_object_record_id(
+                inv, call_model=str(inv._name))
+            attachment_id = attachment_obj.create(
+                {
+                    'name': 'DTE_' + attachment_name +
+                            '-' + str(folio) + '.pdf',
+                    'datas': invoice_pdf,
+                    'datas_fname': 'DTE_' + attachment_name +
+                                   '-' + str(folio) + '.pdf',
+                    'res_model': inv._name,
+                    'res_id': record_id,
+                    'type': 'binary'})
+            _logger.info('attachment pdf')
+            _logger.info(attachment_name)
+            _logger.info(attachment_id)
+            _logger.info(record_id)
+
+    @api.multi
+    def bring_pdf_ldte(self, foliop='', headers='', call_model='', r_id=False):
+        """
+        Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
+        @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
+        @version: 2016-06-23
+        Se corrige función para que no cree un nuevo PDF cada vez que se hace
+        clic en botón
+        y no tome PDF con cedible que se creará en botón imprimir.
+        @review: Juan Plaza (jplaza@isos.cl)
+        @version: 2016-09-28
+        """
+        _logger.info('bring_pdf_ldte NUEVA FUNCION.. call_model: {}'.format(
+            call_model))
+        attachment_obj = self.env['ir.attachment']
+        if attachment_obj.search(
+                [('res_model', '=', self._name), ('res_id', '=', self.id,),
+                 ('name', 'like', 'DTE_'),
+                 ('name', 'not like', 'cedible'), ('name', 'ilike', '.pdf')]):
+            pass
+        else:
+            if call_model == 'stock.picking':
+                _logger.info(
+                    'contexto en bring_pdf_ldte: {}'.format(self._context))
+                inv = self.env['stock.picking'].browse(r_id)
+                # self._context['active_id'])
+                sii_code = 52
+            else:
+                self.ensure_one()
+                inv = self
+                sii_code = inv.sii_document_class_id.sii_code
+                folio = self.get_folio_current()
+            try:
+                if not folio:
+                    folio = foliop
+            except:
+                folio = foliop
+            emisor = self.format_vat(inv.company_id.vat)
+            _logger.info('entrada a bringpdf function')
+            if not headers:
+                headers = self.create_headers_ldte(comp_id=self.company_id)
+            # en lugar de third_party_xml, que ahora no va a existir más,
+            # hay que tomar el xml del adjunto, o bien del texto
+            # pero prefiero del adjunto
+            # no hace falta el xml con la nueva funcion (DB: 2017-03-01)
+            # dte_xml = self.get_xml_attachment(inv)
+            copias_tributarias = self.company_id.dte_tributarias \
+                if self.company_id.dte_tributarias else 1
+            copias_cedibles = self.company_id.dte_cedibles \
+                if self.company_id.dte_cedibles else 0
+            # generar_pdf_request = json.dumps(
+            #     {'dte': sii_code,
+            #      'folio': folio,
+            #      'emisor': emisor,
+            #      'cedible': (copias_cedibles > 0),
+            #      'compress': False,
+            #      'copias_tributarias': copias_tributarias,
+            #      'copias_cedibles': copias_cedibles})
+            # _logger.info(generar_pdf_request)
+            response_pdf = pool.urlopen(
+                'GET', api_get_doc.format(
+                    'pdf', sii_code, folio, emisor), headers=headers)
+            # response_pdf = pool.urlopen(
+            #     'GET', api_gen_pdf_new, headers=headers,
+            #     body=generar_pdf_request)
+            _logger.info('!!!!!_____________############# response{}'.format(
+                response_pdf.data
+            ))
+            if response_pdf.status != 200:
+                raise UserError('Error en conexión al generar: {}, {}'.format(
+                    response_pdf.status, response_pdf.data))
+            invoice_pdf = base64.b64encode(response_pdf.data)
+            # raise UserError(inv._name)
+            attachment_name = self.get_attachment_name(
+                inv, call_model=str(inv._name))
+            attachment_obj = self.env['ir.attachment']
+            # raise UserError(inv._name, inv.id, inv._context)
+            record_id = r_id or self.get_object_record_id(
                 inv, call_model=str(inv._name))
             attachment_id = attachment_obj.create(
                 {

@@ -1524,8 +1524,8 @@ es exento. Deberá utilizar documento diferente a factura exenta para registrar 
 la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 # continua si está todo bien
-                lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
-                if True:
+                lines['NmbItem'] = self.char_replace(line.name)[:80]
+                if False:
                     lines['DscItem'] = self.char_replace(line.name)[:80]
                 if line.quantity == 0 and line.price_unit == 0 and \
                                 sii_code in [61, 56]:

@@ -26,6 +26,7 @@ import textwrap
 from signxml import *
 from lxml import objectify
 from lxml.etree import XMLSyntaxError
+import requests
 
 from xml.dom.minidom import parseString
 
@@ -1111,18 +1112,14 @@ TRACKID antes de revalidar, reintente la validación.')
     obtener el PDF desde LibreDTE
     '''
     @api.multi
-    def bring_pdf_ldte_old(self, foliop='', headers='', call_model=''):
+    def bring_pdf_ldte_new(self, foliop='', headers='', call_model=''):
         """
-        Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
+        Función para tomar el PDF generado en libreDTE y enviarlo a
+        www.documentosonline.cl para obtener el pdf
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2016-06-23
-        Se corrige función para que no cree un nuevo PDF cada vez que se hace
-        clic en botón
-        y no tome PDF con cedible que se creará en botón imprimir.
-        @review: Juan Plaza (jplaza@isos.cl)
-        @version: 2016-09-28
+        @version: 2017-04-09
         """
-        _logger.info('bring_pdf_ldte.. call_model: {}'.format(call_model))
+        _logger.info('bring_pdf_ldte_new.. call_model: {}'.format(call_model))
         attachment_obj = self.env['ir.attachment']
         if attachment_obj.search(
                 [('res_model', '=', self._name), ('res_id', '=', self.id,),
@@ -1146,33 +1143,52 @@ TRACKID antes de revalidar, reintente la validación.')
                     folio = foliop
             except:
                 folio = foliop
-
             _logger.info('entrada a bringpdf function')
-            if not headers:
-                headers = self.create_headers_ldte(comp_id=self.company_id)
-            # en lugar de third_party_xml, que ahora no va a existir más,
-            # hay que tomar el xml del adjunto, o bien del texto
-            # pero prefiero del adjunto
+            headers = {}
+            headers['Accept'] = u'*/*'
+            headers['Accept-Encoding'] = u'gzip, deflate, compress'
+            headers['Connection'] = u'close'
+            headers['Content-Type'] = u'multipart/form-data; boundary=33b4531\
+a79be4b278de5f5688fab7701'
+            # headers[
+            #    'User-Agent'] = u'python-requests/2.2.1 CPython/2.7.6
+            # Darwin/13.2.0'
+            headers['User-Agent'] = u'python-requests/2.6.0 CPython/2.7.6 \
+Linux/3.13.0-88-generic'
+            headers['charset'] = u'utf-8'
             dte_xml = self.get_xml_attachment(inv)
+            """
             dte_tributarias = self.company_id.dte_tributarias \
                 if self.company_id.dte_tributarias else 1
             dte_cedibles = self.company_id.dte_cedibles \
                 if self.company_id.dte_cedibles else 0
-            generar_pdf_request = json.dumps(
-                {'xml': dte_xml,
-                 'cedible': 1 if dte_cedibles > 0 else 0,
-                 'copias_tributarias': dte_tributarias,
-                 'copias_cedibles': dte_cedibles,
-                 'compress': False})
-            _logger.info(generar_pdf_request)
-            response_pdf = pool.urlopen(
-                'POST', api_gen_pdf, headers=headers,
-                body=generar_pdf_request)
-            if response_pdf.status != 200:
-                raise UserError('Error en conexión al generar: {}, {}'.format(
-                    response_pdf.status, response_pdf.data))
-            invoice_pdf = base64.b64encode(response_pdf.data)
-            # raise UserError(inv._name)
+            """
+            # print dte_xml
+            # raise UserError('ver xml')
+            r = requests.post('http://www.documentosonline.cl/dte/hgen/token',
+                              files=dict(file_upload=base64.b64decode(dte_xml)))
+            print r.json()
+            # raise UserError('ver token')
+            if r.status_code != 200:
+                _logger.info(r.text)
+                raise UserError('Error en conexión al enviar XML {}'.format(
+                    r.status_code))
+            # raise UserError('ver token')
+            # to-do: guardar token
+            headers['Connection'] = 'keep-alive'
+            headers['Content-Type'] = 'application/json'
+            data = {
+                'params': json.loads(r.text)
+            }
+            r = requests.post(
+                'http://www.documentosonline.cl/dte/jget', headers=headers,
+                data=json.dumps(data))
+            if r.status_code != 200:
+                raise UserError(
+                    'Error de conexión al recibir el PDF {} {}'.format(
+                        r.status_code, r.text))
+            print r.json()
+            invoice_pdf = json.loads(r.json()['result'])['pdf']
             attachment_name = self.get_attachment_name(
                 inv, call_model=str(inv._name))
             attachment_obj = self.env['ir.attachment']

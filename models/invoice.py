@@ -640,7 +640,7 @@ Linux/3.13.0-88-generic'
         if inv.dte_service_provider in [
             'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
             # reobtener el folio
-            folio = self.get_folio_current(self.document_number)
+            folio = self.get_folio_current()
             dte_username = self.company_id.dte_username
             dte_password = self.company_id.dte_password
             envio_check = '''<?xml version="1.0" encoding="utf-8"?>
@@ -778,7 +778,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         if self.dte_service_provider in [
             'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
             host = 'https://www.efacturadelsur.cl'
-            post = '/ws/DTE.asmx' # HTTP/1.1
+            post = '/ws/DTE.asmx'  # HTTP/1.1
             url = host + post
             _logger.info('URL to be used {}'.format(url))
             _logger.info('Lenght used for forming envelope: {}'.format(len(
@@ -1567,7 +1567,7 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                     # todo: opcional lines['UnmdItem'] = line.uos_id.name[:4]
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
-                    lines['PrcItem'] = round(price_unit, 0)
+                    lines['PrcItem'] = round(price_unit, 2)
 
                 if True:
                     if line.discount != 0:
@@ -1713,11 +1713,14 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Totales'] = collections.OrderedDict()
             MntTotal = int(round(inv.amount_total, 0))
             if True:
-                if sii_code in [34, 61] and MntExe > 0:
+                # raise UserError('entra por true {} - {}'.format(
+                #     sii_code, MntExe))
+                if sii_code in [32, 34, 61] and MntExe > 0:
                     dte['Encabezado']['Totales']['MntExe'] = MntExe
                     # int(round(
                     #    inv.amount_total, 0))
-                elif sii_code in [32, 61] and MntExe == 0:
+                elif sii_code in [33, 61] and MntExe == 0:
+                    # raise UserError('entra por mntneto')
                     dte['Encabezado']['Totales']['MntNeto'] = int(round(
                         inv.amount_untaxed, 0))
                     try:
@@ -1772,14 +1775,14 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             xml = dicttoxml.dicttoxml(
                 dte1, root=False, attr_type=False).replace(
                     '<item>', '').replace('</item>', '')
-            # control dte
+            xml = self.remove_plurals_xml(xml)
             _logger.info(dte)
             _logger.info(json.dumps(dte))
             # raise UserError('verdte.....')
             root = etree.XML(xml)
-
             xml_pret = etree.tostring(root, pretty_print=True).replace(
 '<Documento_ID>', doc_id).replace('</Documento_ID>', '</Documento>')
+
             if len(adi_lines) > 0:
                 item_function = lambda x: 'NodosA'
                 xml_pret = xml_pret[:-1] + parseString(dicttoxml.dicttoxml({
@@ -1788,7 +1791,6 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     attr_type=False,
                     item_func=item_function)).toprettyxml().replace(
                     '<?xml version="1.0" ?>', '')
-            xml_pret = self.remove_plurals_xml(xml_pret)
             xml_pret = self.create_template_doc(xml_pret)
             if inv.dte_service_provider in [
                 'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:

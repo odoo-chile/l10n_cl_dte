@@ -223,6 +223,10 @@ normalize_tags['Referencias']['Referencia']['CodRef'] = [1]
 normalize_tags['Referencias']['Referencia']['RazonRef'] = [1]
 # todo: faltan comisiones y otros cargos
 
+pluralizeds = [
+    'Actecos', 'Detalles', 'Referencias', 'DscRcgGlobals', 'ImptoRetens']
+
+
 class Invoice(models.Model):
     """
     Extension of data model to contain global parameters needed
@@ -231,6 +235,18 @@ class Invoice(models.Model):
     @version: 2016-06-11
     """
     _inherit = "account.invoice"
+
+    @staticmethod
+    def remove_plurals_xml(xml):
+        """
+        Deprecated in odoo10 (moved to pysiidte)
+        :param xml:
+        :return:
+        """
+        for k in pluralizeds:
+            print k
+            xml = xml.replace('<%s>' % k, '').replace('</%s>' % k, '')
+        return xml
 
     def objectpicking(self, function):
         def inner(*args, **kwargs):
@@ -1772,6 +1788,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     attr_type=False,
                     item_func=item_function)).toprettyxml().replace(
                     '<?xml version="1.0" ?>', '')
+            xml_pret = self.remove_plurals_xml(xml_pret)
             xml_pret = self.create_template_doc(xml_pret)
             if inv.dte_service_provider in [
                 'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:

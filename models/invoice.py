@@ -26,7 +26,6 @@ import textwrap
 from signxml import *
 from lxml import objectify
 from lxml.etree import XMLSyntaxError
-import requests
 
 from xml.dom.minidom import parseString
 
@@ -223,10 +222,6 @@ normalize_tags['Referencias']['Referencia']['CodRef'] = [1]
 normalize_tags['Referencias']['Referencia']['RazonRef'] = [1]
 # todo: faltan comisiones y otros cargos
 
-pluralizeds = [
-    'Actecos', 'Detalles', 'Referencias', 'DscRcgGlobals', 'ImptoRetens']
-
-
 class Invoice(models.Model):
     """
     Extension of data model to contain global parameters needed
@@ -235,18 +230,6 @@ class Invoice(models.Model):
     @version: 2016-06-11
     """
     _inherit = "account.invoice"
-
-    @staticmethod
-    def remove_plurals_xml(xml):
-        """
-        Deprecated in odoo10 (moved to pysiidte)
-        :param xml:
-        :return:
-        """
-        for k in pluralizeds:
-            print k
-            xml = xml.replace('<%s>' % k, '').replace('</%s>' % k, '')
-        return xml
 
     def objectpicking(self, function):
         def inner(*args, **kwargs):
@@ -640,7 +623,7 @@ Linux/3.13.0-88-generic'
         if inv.dte_service_provider in [
             'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
             # reobtener el folio
-            folio = self.get_folio_current()
+            folio = self.get_folio_current(self.document_number)
             dte_username = self.company_id.dte_username
             dte_password = self.company_id.dte_password
             envio_check = '''<?xml version="1.0" encoding="utf-8"?>
@@ -778,7 +761,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
         if self.dte_service_provider in [
             'EFACTURADELSUR', 'EFACTURADELSUR_TEST']:
             host = 'https://www.efacturadelsur.cl'
-            post = '/ws/DTE.asmx'  # HTTP/1.1
+            post = '/ws/DTE.asmx' # HTTP/1.1
             url = host + post
             _logger.info('URL to be used {}'.format(url))
             _logger.info('Lenght used for forming envelope: {}'.format(len(
@@ -1128,14 +1111,18 @@ TRACKID antes de revalidar, reintente la validación.')
     obtener el PDF desde LibreDTE
     '''
     @api.multi
-    def bring_pdf_ldte_new(self, foliop='', headers='', call_model=''):
+    def bring_pdf_ldte_old(self, foliop='', headers='', call_model=''):
         """
-        Función para tomar el PDF generado en libreDTE y enviarlo a
-        www.documentosonline.cl para obtener el pdf
+        Función para tomar el PDF generado en libreDTE y adjuntarlo al registro
         @author: Daniel Blanco Martin (daniel[at]blancomartin.cl)
-        @version: 2017-04-09
+        @version: 2016-06-23
+        Se corrige función para que no cree un nuevo PDF cada vez que se hace
+        clic en botón
+        y no tome PDF con cedible que se creará en botón imprimir.
+        @review: Juan Plaza (jplaza@isos.cl)
+        @version: 2016-09-28
         """
-        _logger.info('bring_pdf_ldte_new.. call_model: {}'.format(call_model))
+        _logger.info('bring_pdf_ldte.. call_model: {}'.format(call_model))
         attachment_obj = self.env['ir.attachment']
         if attachment_obj.search(
                 [('res_model', '=', self._name), ('res_id', '=', self.id,),
@@ -1159,52 +1146,33 @@ TRACKID antes de revalidar, reintente la validación.')
                     folio = foliop
             except:
                 folio = foliop
+
             _logger.info('entrada a bringpdf function')
-            headers = {}
-            headers['Accept'] = u'*/*'
-            headers['Accept-Encoding'] = u'gzip, deflate, compress'
-            headers['Connection'] = u'close'
-            headers['Content-Type'] = u'multipart/form-data; boundary=33b4531\
-a79be4b278de5f5688fab7701'
-            # headers[
-            #    'User-Agent'] = u'python-requests/2.2.1 CPython/2.7.6
-            # Darwin/13.2.0'
-            headers['User-Agent'] = u'python-requests/2.6.0 CPython/2.7.6 \
-Linux/3.13.0-88-generic'
-            headers['charset'] = u'utf-8'
+            if not headers:
+                headers = self.create_headers_ldte(comp_id=self.company_id)
+            # en lugar de third_party_xml, que ahora no va a existir más,
+            # hay que tomar el xml del adjunto, o bien del texto
+            # pero prefiero del adjunto
             dte_xml = self.get_xml_attachment(inv)
-            """
             dte_tributarias = self.company_id.dte_tributarias \
                 if self.company_id.dte_tributarias else 1
             dte_cedibles = self.company_id.dte_cedibles \
                 if self.company_id.dte_cedibles else 0
-            """
-            # print dte_xml
-            # raise UserError('ver xml')
-            r = requests.post('http://www.documentosonline.cl/dte/hgen/token',
-                              files=dict(file_upload=base64.b64decode(dte_xml)))
-            print r.json()
-            # raise UserError('ver token')
-            if r.status_code != 200:
-                _logger.info(r.text)
-                raise UserError('Error en conexión al enviar XML {}'.format(
-                    r.status_code))
-            # raise UserError('ver token')
-            # to-do: guardar token
-            headers['Connection'] = 'keep-alive'
-            headers['Content-Type'] = 'application/json'
-            data = {
-                'params': json.loads(r.text)
-            }
-            r = requests.post(
-                'http://www.documentosonline.cl/dte/jget', headers=headers,
-                data=json.dumps(data))
-            if r.status_code != 200:
-                raise UserError(
-                    'Error de conexión al recibir el PDF {} {}'.format(
-                        r.status_code, r.text))
-            print r.json()
-            invoice_pdf = json.loads(r.json()['result'])['pdf']
+            generar_pdf_request = json.dumps(
+                {'xml': dte_xml,
+                 'cedible': 1 if dte_cedibles > 0 else 0,
+                 'copias_tributarias': dte_tributarias,
+                 'copias_cedibles': dte_cedibles,
+                 'compress': False})
+            _logger.info(generar_pdf_request)
+            response_pdf = pool.urlopen(
+                'POST', api_gen_pdf, headers=headers,
+                body=generar_pdf_request)
+            if response_pdf.status != 200:
+                raise UserError('Error en conexión al generar: {}, {}'.format(
+                    response_pdf.status, response_pdf.data))
+            invoice_pdf = base64.b64encode(response_pdf.data)
+            # raise UserError(inv._name)
             attachment_name = self.get_attachment_name(
                 inv, call_model=str(inv._name))
             attachment_obj = self.env['ir.attachment']
@@ -1273,7 +1241,7 @@ Linux/3.13.0-88-generic'
             # no hace falta el xml con la nueva funcion (DB: 2017-03-01)
             # dte_xml = self.get_xml_attachment(inv)
             copias_tributarias = self.company_id.dte_tributarias \
-                if self.company_id.dte_tributarias else 1
+                if self.company_id.dte_tributarias else 2
             copias_cedibles = self.company_id.dte_cedibles \
                 if self.company_id.dte_cedibles else 0
             # generar_pdf_request = json.dumps(
@@ -1285,9 +1253,21 @@ Linux/3.13.0-88-generic'
             #      'copias_tributarias': copias_tributarias,
             #      'copias_cedibles': copias_cedibles})
             # _logger.info(generar_pdf_request)
+            api_service = api_get_doc.format(
+               'pdf',
+               sii_code,
+               folio,
+               emisor[:-2])
+            api_service += '?copias_tributarias={}'.format(
+                copias_tributarias
+            )
+            #   'true',
+            #   '2',
+            #   '1'
+            #)
+            _logger.info('###################-----{}'.format(api_service))
             response_pdf = pool.urlopen(
-                'GET', api_get_doc.format(
-                    'pdf', sii_code, folio, emisor), headers=headers)
+                'GET', api_service, headers=headers)
             # response_pdf = pool.urlopen(
             #     'GET', api_gen_pdf_new, headers=headers,
             #     body=generar_pdf_request)
@@ -1567,7 +1547,7 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                     # todo: opcional lines['UnmdItem'] = line.uos_id.name[:4]
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
-                    lines['PrcItem'] = round(price_unit, 2)
+                    lines['PrcItem'] = round(price_unit, 0)
 
                 if True:
                     if line.discount != 0:
@@ -1713,14 +1693,11 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Totales'] = collections.OrderedDict()
             MntTotal = int(round(inv.amount_total, 0))
             if True:
-                # raise UserError('entra por true {} - {}'.format(
-                #     sii_code, MntExe))
-                if sii_code in [32, 34, 61] and MntExe > 0:
+                if sii_code in [34, 61] and MntExe > 0:
                     dte['Encabezado']['Totales']['MntExe'] = MntExe
                     # int(round(
                     #    inv.amount_total, 0))
-                elif sii_code in [33, 61] and MntExe == 0:
-                    # raise UserError('entra por mntneto')
+                elif sii_code in [32, 61] and MntExe == 0:
                     dte['Encabezado']['Totales']['MntNeto'] = int(round(
                         inv.amount_untaxed, 0))
                     try:
@@ -1775,14 +1752,14 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             xml = dicttoxml.dicttoxml(
                 dte1, root=False, attr_type=False).replace(
                     '<item>', '').replace('</item>', '')
-            xml = self.remove_plurals_xml(xml)
+            # control dte
             _logger.info(dte)
             _logger.info(json.dumps(dte))
             # raise UserError('verdte.....')
             root = etree.XML(xml)
+
             xml_pret = etree.tostring(root, pretty_print=True).replace(
 '<Documento_ID>', doc_id).replace('</Documento_ID>', '</Documento>')
-
             if len(adi_lines) > 0:
                 item_function = lambda x: 'NodosA'
                 xml_pret = xml_pret[:-1] + parseString(dicttoxml.dicttoxml({

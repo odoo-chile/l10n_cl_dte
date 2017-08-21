@@ -1241,7 +1241,7 @@ TRACKID antes de revalidar, reintente la validación.')
             # no hace falta el xml con la nueva funcion (DB: 2017-03-01)
             # dte_xml = self.get_xml_attachment(inv)
             copias_tributarias = self.company_id.dte_tributarias \
-                if self.company_id.dte_tributarias else 1
+                if self.company_id.dte_tributarias else 2
             copias_cedibles = self.company_id.dte_cedibles \
                 if self.company_id.dte_cedibles else 0
             # generar_pdf_request = json.dumps(
@@ -1253,9 +1253,21 @@ TRACKID antes de revalidar, reintente la validación.')
             #      'copias_tributarias': copias_tributarias,
             #      'copias_cedibles': copias_cedibles})
             # _logger.info(generar_pdf_request)
+            api_service = api_get_doc.format(
+               'pdf',
+               sii_code,
+               folio,
+               emisor[:-2])
+            api_service += '?copias_tributarias={}'.format(
+                copias_tributarias
+            )
+            #   'true',
+            #   '2',
+            #   '1'
+            #)
+            _logger.info('###################-----{}'.format(api_service))
             response_pdf = pool.urlopen(
-                'GET', api_get_doc.format(
-                    'pdf', sii_code, folio, emisor), headers=headers)
+                'GET', api_service, headers=headers)
             # response_pdf = pool.urlopen(
             #     'GET', api_gen_pdf_new, headers=headers,
             #     body=generar_pdf_request)
@@ -1524,8 +1536,8 @@ es exento. Deberá utilizar documento diferente a factura exenta para registrar 
 la venta, o cambiar el tipo de documento de forma acorde. Producto que \
 provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 # continua si está todo bien
-                lines['NmbItem'] = self.char_replace(line.product_id.name)[:80]
-                if True:
+                lines['NmbItem'] = self.char_replace(line.name)[:80]
+                if False:
                     lines['DscItem'] = self.char_replace(line.name)[:80]
                 if line.quantity == 0 and line.price_unit == 0 and \
                                 sii_code in [61, 56]:

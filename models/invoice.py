@@ -1679,17 +1679,19 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                                 inv.partner_id.phone or ''))[:80]
                     except:
                         _logger.info('No pudo leer información de contacto')
+            # a partir de aca se cambia partner_id por partner_invoice_id
             dte['Encabezado']['Receptor']['DirRecep'] = self.char_replace(
-                inv.partner_id.street)
+                inv.partner_invoice_id.street)
             # todo: revisar comuna: "false"
-            if inv.partner_id.state_id.name == False or \
-                            inv.partner_id.city == False:
+            if not inv.partner_invoice_id.state_id.name or \
+                    not inv.partner_invoice_id.city:
                 raise UserError(
                     'No se puede continuar: Revisar comuna y ciudad')
             dte['Encabezado']['Receptor']['CmnaRecep'] = self.char_replace(
-                inv.partner_id.state_id.name)
+                inv.partner_invoice_id.state_id.name)
             dte['Encabezado']['Receptor']['CiudadRecep'] = self.char_replace(
-                inv.partner_id.city)
+                inv.partner_invoice_id.city)
+            # hasta aca los cambios de partner_invoice_id
             dte['Encabezado']['Totales'] = collections.OrderedDict()
             MntTotal = int(round(inv.amount_total, 0))
             if True:

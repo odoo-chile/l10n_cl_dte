@@ -106,26 +106,22 @@ class DteEmail(models.Model):
             # estos datos los toma de LibreDTE unicamente si están vacíos
             try:
                 self.name = partner_values[
-                    'contribuyente'].title() if self.name == False \
-                    else self.name
+                    'contribuyente'].title() if not self.name else self.name
             except:
                 pass
             try:
                 self.name = partner_values[
-                    'razon_social'].title() if self.name == False \
-                    else self.name
+                    'razon_social'].title() if not self.name else self.name
             except:
                 pass
             try:
                 self.street = partner_values[
-                    'direccion'].title() if self.street == False \
-                    else self.street
+                    'direccion'].title() if not self.street else self.street
             except:
                 pass
             try:
                 self.website = partner_values[
-                    'config_extra_web'] if self.website == False \
-                    else self.website
+                    'config_extra_web'] if not self.website else self.website
             except:
                 pass
             try:

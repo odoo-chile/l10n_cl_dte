@@ -34,6 +34,7 @@ Chile: API and GUI to access Electronic Invoicing webservices.
 """,
     'depends': [
         'webservices_generic',
+        'sale_account_invoice_address',
         'product',
         'l10n_cl_counties',
         'l10n_cl_invoice',

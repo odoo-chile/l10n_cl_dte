@@ -314,7 +314,7 @@ Le recomendamos no continuar facturando hasta realizar este proceso.""")
         # order_mode = {'order_id': order_id_object,
         # 'model_object_id': picking/invoice}
 
-        #### primero picking
+        # primero picking
         ref_obj = self.env[model]
         picking_obj = self.env['stock.picking']
         picking_id = picking_obj.search([('name', '=', inv.origin)])
@@ -1436,7 +1436,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Receptor']['DirRecep'] = self.char_replace(
                 inv.partner_id.street)
             # todo: revisar comuna: "false"
-            if sii_code not in [39]: # si es boleta electronica, la direccion comuna y ciudad es opcional.
+            if sii_code not in [39]:  # si es boleta electronica, la direccion comuna y ciudad es opcional.
                if inv.partner_id.state_id.name == False or \
                                inv.partner_id.city == False:
                    raise UserError(

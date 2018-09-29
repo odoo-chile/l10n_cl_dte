@@ -65,7 +65,7 @@ Chile: API and GUI to access Electronic Invoicing webservices.
         'security/ir.model.access.csv',
         'wizard/dte_status_update_view.xml',
         'wizard/account_invoice_refund_view.xml',
-        'data/product.xml',
+        #'data/product.xml',
     ],
     'installable': True,
     'auto_install': False,

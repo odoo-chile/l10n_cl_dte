@@ -73,12 +73,14 @@ special_chars = [
     [u'í', 'i'],
     [u'ó', 'o'],
     [u'ú', 'u'],
+    [u'ü', 'u'],
     [u'ñ', 'n'],
     [u'Á', 'A'],
     [u'É', 'E'],
     [u'Í', 'I'],
     [u'Ó', 'O'],
     [u'Ú', 'U'],
+    [u'Ü', 'U'],
     [u'Ñ', 'N']]
 
 
@@ -964,6 +966,7 @@ TRACKID antes de revalidar, reintente la validación.')
                  'cedible': 1 if dte_cedibles > 0 else 0,
                  'copias_tributarias': dte_tributarias,
                  'copias_cedibles': dte_cedibles,
+                 'papelContinuo': 75,
                  'compress': False})
             _logger.info(generar_pdf_request)
             response_pdf = pool.urlopen(
@@ -1074,6 +1077,7 @@ at a time.')
              'cedible': 1 if dte_cedibles > 0 else 0,
              'copias_tributarias': dte_tributarias,
              'copias_cedibles': dte_cedibles,
+             'papelContinuo': 75,
              'compress': False})
         _logger.info(genera_pdf_request)
         response_pdf = pool.urlopen(
@@ -1119,6 +1123,7 @@ filename_field=name&id={}'.format(new_attach.id), 'target': 'self'}
     def do_dte_send_invoice(self):
         cant_doc_batch = 0
         sii_code = 0
+        tasa_iva = 19 # Por ahora dejamos el IVA en duro
         for inv in self.with_context(lang='es_CL'):
             if inv.type[:2] == 'in':
                 continue
@@ -1238,6 +1243,13 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                     # lines['PrcItem'] = round(line.price_unit, 4)
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
+                    #si es boleta electronica el precio unitario debe incluir el iva. a
+                    #no estoy seguro que pasa con el resto de los proveedores.
+                    _logger.info('Validamos si es Boleta')
+                    if sii_code in [39]:
+                            _logger.info('Es Boleta. Neto :%f',price_unit)
+                            price_unit = price_unit * 1.19
+                            _logger.info('Es Boleta. c/iva :%f',price_unit)
                     lines['PrcItem'] = round(price_unit, 4)
 
                 if 1==1:
@@ -1250,7 +1262,13 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 else:
                     #except:
                     pass
-                lines['MontoItem'] = int(round(line.price_subtotal, 0))
+                if sii_code in [39]:
+                    _logger.info('Es Boleta. subtotal Neto :%f',line.price_subtotal)
+                    price_subtotal = line.price_subtotal * 1.19
+                    _logger.info('Es Boleta. subtotal c/iva :%f',price_subtotal)
+                else:
+                    price_subtotal = line.price_subtotal
+                lines['MontoItem'] = int(round(price_subtotal, 0))
                 line_number = line_number + 1
                 if inv.dte_service_provider not in [
                     'LIBREDTE', 'LIBREDTE_TEST']:
@@ -1313,13 +1331,14 @@ is {} does not match'.format(sii_code)))
             dte['Encabezado']['IdDoc']['Folio'] = folio
             dte['Encabezado']['IdDoc']['FchEmis'] = inv.date_invoice
             # todo: forma de pago y fecha de vencimiento - opcional
-            dte['Encabezado']['IdDoc'][
-                'FmaPago'] = inv.payment_term.dte_sii_code or 1
-            if inv.date_due < inv.date_invoice:
-                raise UserError('LA FECHA DE VENCIMIENTO'\
+            if sii_code not in  [39]: #si es boleta omito  forma de pago y vencimiento
+               dte['Encabezado']['IdDoc'][
+                   'FmaPago'] = inv.payment_term.dte_sii_code or 1
+               if inv.date_due < inv.date_invoice:
+                   raise UserError('LA FECHA DE VENCIMIENTO'\
 'NO PUEDE SER ANTERIOR A LA DE FACTURACION: Fecha de Facturación: {}, Fecha \
 de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
-            dte['Encabezado']['IdDoc']['FchVenc'] = inv.date_due
+               dte['Encabezado']['IdDoc']['FchVenc'] = inv.date_due
             dte['Encabezado']['Emisor'] = collections.OrderedDict()
             dte['Encabezado']['Emisor']['RUTEmisor'] = self.format_vat(
                 inv.company_id.vat)
@@ -1368,17 +1387,30 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             if not inv.partner_id.parent_id:
                 # si viene por aca quiere decir que estoy tratando con la
                 # compañia principal
-                dte['Encabezado']['Receptor']['RUTRecep'] = self.format_vat(
-                    inv.partner_id.vat)
+                if sii_code in [39] and  inv.partner_id.vat == False: #si es boleta omito rut
+                   _logger.info('Es boleta y RUT Vacio aplico rut 66666666-6')
+                   dte['Encabezado']['Receptor']['RUTRecep'] ='66666666-6'
+                else:
+                   _logger.info('no es boleta')
+                   dte['Encabezado']['Receptor']['RUTRecep'] = self.format_vat(
+                       inv.partner_id.vat)
                 dte['Encabezado']['Receptor'][
                     'RznSocRecep'] = inv.partner_id.name
+                if sii_code in [39] and not inv.invoice_turn.name: #si es boleta omito el giro
+                    _logger.info('es boleta sin giro')
+                else:
+                    if sii_code in [61] and inv.partner_id.responsability_id.tp_sii_code == 0: #tp_sii_code 0 =BOLETA
+                        # #para hacer una NC de una boleta electronica no necesito giro
+                        _logger.info('es nota de credito de boleta no neceisto giro.')
+            else:
+                _logger.info('no es boleta o tiene giro, tampoco NC de cliente boleta')
                 if not inv.invoice_turn.name:
-                    raise UserError(_('There is no customer turn selected.'))
+                    raise UserError(_('Cliente no tiene Giro o Actividad Economica'))
                 dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
-                    inv.invoice_turn.name)[:40]
-                if inv.contact_data:
-                    dte['Encabezado']['Receptor'][
-                        'Contacto'] = self.char_replace(inv.contact_data)
+                      inv.invoice_turn.name)[:40]
+            if inv.contact_data:
+                dte['Encabezado']['Receptor'][
+                    'Contacto'] = self.char_replace(inv.contact_data)
             else:
                 # si viene por aca significa que estoy en un partner "hijo"
                 # y debo tomar la razon social principal
@@ -1404,10 +1436,14 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
             dte['Encabezado']['Receptor']['DirRecep'] = self.char_replace(
                 inv.partner_id.street)
             # todo: revisar comuna: "false"
-            if inv.partner_id.state_id.name == False or \
-                            inv.partner_id.city == False:
-                raise UserError(
-                    'No se puede continuar: Revisar comuna y ciudad')
+            if sii_code not in [39]: # si es boleta electronica, la direccion comuna y ciudad es opcional.
+               if inv.partner_id.state_id.name == False or \
+                               inv.partner_id.city == False:
+                   raise UserError(
+                       'No se puede continuar: Revisar comuna y ciudad')
+               if inv.partner_id.street == False:
+                   _logger.info('calle vacio')
+                   raise UserError('No se puede continuar: Revisar dirección')
             dte['Encabezado']['Receptor']['CmnaRecep'] = self.char_replace(
                 inv.partner_id.state_id.name)
             dte['Encabezado']['Receptor']['CiudadRecep'] = self.char_replace(
@@ -1437,7 +1473,7 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                         # problema cuando se usan n/c o n/d para hacer
                         # modificaciones
                         _logger.info('calculo de iva total por excepcion')
-                        dte['Encabezado']['Totales']['TasaIVA'] = 19
+                        dte['Encabezado']['Totales']['TasaIVA'] = tasa_iva
 
                     dte['Encabezado']['Totales']['IVA'] = MntTotal - dte[
                         'Encabezado']['Totales']['MntNeto']

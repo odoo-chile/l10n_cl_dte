@@ -28,7 +28,7 @@ pool = urllib3.PoolManager()
 
 _logger = logging.getLogger(__name__)
 
-host = 'https://libredte.cl/api'
+host = 'https://www.repostock.cl/libredte/api'
 api_get_partner_data = host + '/dte/contribuyentes/info/'
 
 tax_resp_category = {u'1': u'res_IVARI',  u'2': u'res_BH'}

@@ -520,7 +520,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
                     folio) + '/' + str(self.format_vat(
                     self.company_id.vat)) + '/' + str(metodo),
                 headers=headers)
-
+            _logger.info('RESPONSE STATUS %s' % response_status.status)
             if response_status.status != 200:
                 raise UserError(
                     'Error al obtener el estado del DTE emitido: {}'.format(
@@ -541,7 +541,7 @@ xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
             elif response_status_j['revision_estado'][:3] in \
                     ['SOK', 'CRT', 'PDR', 'FOK', '-11']:
                 resultado_status = 'Proceso'
-                _logger.info('Atención: Revisión en Proceso')
+                _logger.info(u'Atención: Revisión en Proceso')
             elif response_status_j['revision_estado'] in \
                     ['RCH - DTE Rechazado',
                      'RFR - Rechazado por Error en Firma',
@@ -1238,7 +1238,8 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                     # lines['PrcItem'] = round(line.price_unit, 4)
                     price_unit = (line.price_subtotal/line.quantity) / (
                         1-line.discount/100)
-                    lines['PrcItem'] = round(price_unit, 4)
+                    if price_unit > 0:
+                        lines['PrcItem'] = round(price_unit, 4)
 
                 if 1==1:
                     # try:
@@ -1250,7 +1251,8 @@ provocó el problema: {}'''.format(sii_code, line.product_id.name))
                 else:
                     #except:
                     pass
-                lines['MontoItem'] = int(round(line.price_subtotal, 0))
+                if line.price_subtotal > 0:
+                    lines['MontoItem'] = int(round(line.price_subtotal, 0))
                 line_number = line_number + 1
                 if inv.dte_service_provider not in [
                     'LIBREDTE', 'LIBREDTE_TEST']:

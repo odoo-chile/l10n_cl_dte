@@ -60,8 +60,7 @@ pool = urllib3.PoolManager()
 # hardcodeamos este valor por ahora
 xsdpath = os.path.dirname(os.path.realpath(__file__)).replace(
     '/models', '/static/xsd/')
-#host = 'http://45.56.118.6/libredte/api'
-host = 'http://www.repostock.cl:8080/libredte/api'
+host = 'https://libredte.cl/api'
 api_emitir = host + '/dte/documentos/emitir'
 api_generar = host + '/dte/documentos/generar'
 api_gen_pdf = host + '/dte/documentos/generar_pdf'
@@ -1403,13 +1402,15 @@ de Vencimiento {}'.format(inv.date_invoice, inv.date_due))
                     if sii_code in [61] and inv.partner_id.responsability_id.tp_sii_code == 0: #tp_sii_code 0 =BOLETA
                         # #para hacer una NC de una boleta electronica no necesito giro
                         _logger.info('es nota de credito de boleta no neceisto giro.')
-                    else:
-                        _logger.info('no es boleta o tiene giro, tampoco NC de cliente boleta')
-                        if not inv.invoice_turn.name:
-                            raise UserError(_('Cliente no tiene Giro o Actividad Economica'))
-                        dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(inv.invoice_turn.name)[:40]
-                if inv.contact_data:
-                    dte['Encabezado']['Receptor']['Contacto'] = self.char_replace(inv.contact_data)
+            else:
+                _logger.info('no es boleta o tiene giro, tampoco NC de cliente boleta')
+                if not inv.invoice_turn.name:
+                    raise UserError(_('Cliente no tiene Giro o Actividad Economica'))
+                dte['Encabezado']['Receptor']['GiroRecep'] = self.char_replace(
+                      inv.invoice_turn.name)[:40]
+            if inv.contact_data:
+                dte['Encabezado']['Receptor'][
+                    'Contacto'] = self.char_replace(inv.contact_data)
             else:
                 # si viene por aca significa que estoy en un partner "hijo"
                 # y debo tomar la razon social principal

@@ -61,7 +61,8 @@ pool = urllib3.PoolManager()
 xsdpath = os.path.dirname(os.path.realpath(__file__)).replace(
     '/models', '/static/xsd/')
 #host = 'http://45.56.118.6/libredte/api'
-host = 'http://www.repostock.cl:8080/libredte/api'
+#host = 'http://www.repostock.cl:8080/libredte/api'
+host = 'https://libredte.cl/api'
 api_emitir = host + '/dte/documentos/emitir'
 api_generar = host + '/dte/documentos/generar'
 api_gen_pdf = host + '/dte/documentos/generar_pdf'
